@@ -1,0 +1,43 @@
+import mmcorej.LongVector;
+import mmcorej.StorageDataType;
+import mmcorej.TaggedImage;
+
+
+String[] channels = {"VIOLET", "CYAN", "GREEN"};
+int timepoints = 100;
+saveLocation = "D:/AcqData/fastAcq";
+
+
+int width = mmc.getImageWidth();
+int height = mmc.getImageHeight();
+print(channels);
+print("Timepoints: " + timepoints);
+print("Image: " + width + "X" + height);
+
+LongVector shape = new LongVector();
+shape.add(timepoints); // time points
+shape.add(channels.length); // channels
+shape.add(height); // pixels y
+shape.add(width); // pixels x
+
+StorageDataType type = StorageDataType.StorageDataType_GRAY16;
+String handle = mmc.createDataset(saveLocation, "trialA", shape, type, "");
+print("Handle: " + handle);
+
+// set up the TTL sequence
+cmd = "SQ ";
+
+mmc.snapImage();
+TaggedImage img = mmc.getTaggedImage();
+pixels = (short[])img.pix;
+
+LongVector coords = new LongVector();
+coords.add(0);
+coords.add(0);
+coords.add(0);
+coords.add(0);
+
+mmc.addImage(handle, pixels.length, pixels, coords, img.tags.toString());
+
+mmc.closeDataset(handle);
+print("Acquisition completed: " + saveLocation);
