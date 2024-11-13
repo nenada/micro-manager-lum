@@ -69,6 +69,11 @@ Type: filesandordirs; Name: {app}\Microsoft.VC90.OPENMP
 
 [Files]
 Source: "..\..\3rdparty\Microsoft\vcredist\2015-2022\vc_redist.{#MMArch_x86x64}.exe"; DestDir: "{app}"; DestName: "vc_redist.{#MMArch_x86x64}.exe"; Flags: deleteafterinstall
+Source: "..\..\3rdparty\Lumencor\Dover\Debug\DoverAPI.dll"; DestDir: "{app}"
+Source: "..\..\3rdparty\Lumencor\Dover\Debug\SmartStageAxis.dll"; DestDir: "{app}"
+Source: "..\..\3rdparty\Lumencor\Dover\Debug\vciapi.dll"; DestDir: "{app}"
+Source: "..\..\3rdparty\Lumencor\Dover\Debug\vcinpl.dll"; DestDir: "{app}"
+
 
 [Run]
 Filename: "{app}\vc_redist.{#MMArch_x86x64}.exe"; Parameters: "/quiet /norestart"; Description: "Microsoft Visual C++ Redistributable"; StatusMsg: "Installing Microsoft Visual C++ Redistributable"
