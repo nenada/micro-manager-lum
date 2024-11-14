@@ -73,6 +73,7 @@ Source: "..\..\3rdparty\Lumencor\Dover\Debug\DoverAPI.dll"; DestDir: "{app}"
 Source: "..\..\3rdparty\Lumencor\Dover\Debug\SmartStageAxis.dll"; DestDir: "{app}"
 Source: "..\..\3rdparty\Lumencor\Dover\Debug\vciapi.dll"; DestDir: "{app}"
 Source: "..\..\3rdparty\Lumencor\Dover\Debug\vcinpl.dll"; DestDir: "{app}"
+Source: "..\..\3rdparty\CZI\acquire-zarr\bin\acquire-zarr.dll"; DestDir: "{app}"
 
 
 [Run]
