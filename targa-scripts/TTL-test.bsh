@@ -1,0 +1,18 @@
+// TTL channel test
+
+channelGroup = "CHANNEL";
+channels = mmc.getAvailableConfigs(channelGroup);
+numberOfTrials = 100;
+
+for (i=0; i<numberOfTrials; i++) {
+	print("\nCycle " + (i + 1));
+	for (c=0; c<channels.size(); c++) {
+		startT = java.lang.System.currentTimeMillis();
+		mmc.setConfig(channelGroup, channels.get(c));
+		deltaT = java.lang.System.currentTimeMillis() - startT;
+		ch = mmc.getCurrentConfig(channelGroup);
+		print(ch + " : " + deltaT + "ms");
+	}
+}
+
+print("Done.");
