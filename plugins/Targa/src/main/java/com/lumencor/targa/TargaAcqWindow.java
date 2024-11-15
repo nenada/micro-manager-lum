@@ -3,6 +3,8 @@ package org.lumencor.targa;
 import mmcorej.CMMCore;
 
 import javax.swing.*;
+import javax.swing.border.BevelBorder;
+import javax.swing.event.ChangeEvent;
 import javax.swing.event.ListSelectionEvent;
 import java.awt.*;
 import java.awt.event.*;
@@ -12,6 +14,10 @@ import java.util.Arrays;
 import java.util.Vector;
 import java.util.prefs.Preferences;
 
+import org.micromanager.Studio;
+import org.micromanager.data.Datastore;
+import org.micromanager.data.Image;
+import org.micromanager.internal.MMStudio;
 import org.micromanager.internal.utils.FileDialogs;
 
 /**
@@ -30,7 +36,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 
 	private final JTextField tbLocation_;
 	private final JTextField tbName_;
-	private final JFormattedTextField tbTimePoints_;
+	private final JSpinner tbTimePoints_;
 	private final JFormattedTextField tbTimeInterval_;
 	private final JCheckBox cbTimeLapse_;
 	private final JButton loadButton_;
@@ -48,8 +54,10 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	private final JLabel labelFramerate_;
 	private final JLabel labelImageSize_;
 	private final JLabel labelPixelSize_;
+	private final JLabel statusInfo_;
 	private final JProgressBar progressBar_;
 
+	private final Studio mmstudio_;
 	private final CMMCore core_;
 	private final Vector<String> channels_;
 	private String dataDir_;
@@ -63,10 +71,11 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	 * Class constructor
 	 * @param studio Micro-manager app handle
 	 */
-	TargaAcqWindow(CMMCore studio) {
+	TargaAcqWindow(Studio studio) {
 		super();
 		runnerActive_ = false;
-		core_ = studio;
+		mmstudio_ = studio;
+		core_ = studio.getCMMCore();
 		channels_ = new Vector<>();
 
 		// Set window properties
@@ -103,6 +112,23 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 		integerFieldFormatter.setMaximumFractionDigits(0);
 
 		// Add UI components
+		// Add status bar
+		SpringLayout statusbarlayout = new SpringLayout();
+		JPanel statusPanel = new JPanel();
+		statusPanel.setBorder(new BevelBorder(BevelBorder.LOWERED));
+		statusPanel.setPreferredSize(new Dimension(contentPane.getWidth(), 25));
+		statusPanel.setLayout(statusbarlayout);
+		contentPane.add(statusPanel);
+		layout.putConstraint(SpringLayout.WEST, statusPanel, 0, SpringLayout.WEST, contentPane);
+		layout.putConstraint(SpringLayout.EAST, statusPanel, 0, SpringLayout.EAST, contentPane);
+		layout.putConstraint(SpringLayout.SOUTH, statusPanel, 0, SpringLayout.SOUTH, contentPane);
+
+		statusInfo_ = new JLabel("Ready");
+		statusInfo_.setHorizontalAlignment(SwingConstants.LEFT);
+		statusPanel.add(statusInfo_);
+		statusbarlayout.putConstraint(SpringLayout.WEST, statusInfo_, 10, SpringLayout.WEST, statusPanel);
+		statusbarlayout.putConstraint(SpringLayout.SOUTH, statusInfo_, -1, SpringLayout.SOUTH, statusPanel);
+
 		// Add acquisition location label
 		final JLabel labelDir = new JLabel("Project Directory");
 		contentPane.add(labelDir);
@@ -156,8 +182,8 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 		layout.putConstraint(SpringLayout.NORTH, labelTimepoints, 142, SpringLayout.NORTH, contentPane);
 
 		// Add timepoints count text box
-		tbTimePoints_ = new JFormattedTextField(integerFieldFormatter);
-		tbTimePoints_.addFocusListener(focusListener);
+		tbTimePoints_ = new JSpinner(new SpinnerNumberModel(5, 1, null, 1));
+		tbTimePoints_.addChangeListener((ChangeEvent e) -> applySettingsFromUI());
 		contentPane.add(tbTimePoints_);
 		layout.putConstraint(SpringLayout.WEST, tbTimePoints_, 0, SpringLayout.WEST, tbLocation_);
 		layout.putConstraint(SpringLayout.EAST, tbTimePoints_, 80, SpringLayout.WEST, tbTimePoints_);
@@ -166,6 +192,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 		// Add time lapse check box
 		cbTimeLapse_ = new JCheckBox("Time Lapse");
 		cbTimeLapse_.setHorizontalTextPosition(SwingConstants.LEADING);
+		cbTimeLapse_.addActionListener((ActionEvent e) -> updateTimeLapseOptions());
 		layout.putConstraint(SpringLayout.WEST, cbTimeLapse_, 50, SpringLayout.EAST, tbTimePoints_);
 		layout.putConstraint(SpringLayout.NORTH, cbTimeLapse_, -3, SpringLayout.NORTH, labelTimepoints);
 		contentPane.add(cbTimeLapse_);
@@ -284,7 +311,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 		contentPane.add(startAcqButton_);
 		layout.putConstraint(SpringLayout.WEST, startAcqButton_, 300, SpringLayout.WEST, contentPane);
 		layout.putConstraint(SpringLayout.EAST, startAcqButton_, -300, SpringLayout.EAST, contentPane);
-		layout.putConstraint(SpringLayout.SOUTH, startAcqButton_, -20, SpringLayout.SOUTH, contentPane);
+		layout.putConstraint(SpringLayout.SOUTH, startAcqButton_, -5, SpringLayout.NORTH, statusPanel);
 
 		// Add stop acquisition button
 		stopAcqButton_ = new JButton("Stop Acquisition");
@@ -295,7 +322,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 		stopAcqButton_.setVisible(false);
 		contentPane.add(stopAcqButton_);
 		layout.putConstraint(SpringLayout.EAST, stopAcqButton_, -20, SpringLayout.EAST, contentPane);
-		layout.putConstraint(SpringLayout.SOUTH, stopAcqButton_, -20, SpringLayout.SOUTH, contentPane);
+		layout.putConstraint(SpringLayout.SOUTH, stopAcqButton_, -5, SpringLayout.NORTH, statusPanel);
 
 		// Add progress bar
 		progressBar_ = new JProgressBar();
@@ -306,7 +333,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 		contentPane.add(progressBar_);
 		layout.putConstraint(SpringLayout.WEST, progressBar_, 20, SpringLayout.WEST, contentPane);
 		layout.putConstraint(SpringLayout.EAST, progressBar_, -40, SpringLayout.WEST, stopAcqButton_);
-		layout.putConstraint(SpringLayout.SOUTH, progressBar_, -23, SpringLayout.SOUTH, contentPane);
+		layout.putConstraint(SpringLayout.SOUTH, progressBar_, -8, SpringLayout.NORTH, statusPanel);
 
 		loadSettings();
 		updateAcqInfo(true);
@@ -367,6 +394,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 		tbTimePoints_.setValue(timePoints_);
 		cbTimeLapse_.setSelected(tl);
 		tbTimeInterval_.setValue(timeIntervalMs_);
+		tbTimeInterval_.setEnabled(tl);
 		listChannels_.setListData(channels_);
 		super.setLocation(wndx, wndy);
 	}
@@ -375,7 +403,30 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	 * Load existing data acquisition
 	 */
 	protected void loadAcquisition() {
+		File result = FileDialogs.openFile(this, "Please choose a valid dataset", FileDialogs.MM_DATA_SET);
+		if(result == null)
+			return;
+		try {
+			String handle = core_.loadDataset(result.getAbsolutePath());
+			mmcorej.LongVector shape = core_.getDatasetShape(handle);
+			mmcorej.StorageDataType type = core_.getDatasetPixelType(handle);
+			int w = shape.get((int)shape.size() - 1);
+			int h = shape.get((int)shape.size() - 2);
+			int numImages = 1;
+			for (int i = 0; i < shape.size() - 2; i++) {
+				numImages *= shape.get(i);
+			}
 
+			// TODO: Display data
+			//Datastore store = mmstudio_.getDataManager().loadData(this, result.getPath(), true);
+			//mmstudio_.displays().manage(store);
+			//mmstudio_.displays().loadDisplays(store);
+
+			statusInfo_.setText(String.format("Dataset loaded successfully: %s, %d x %d, images %d, type %s", result.getAbsolutePath(), w, h, numImages, type));
+		} catch(Exception ex) {
+			statusInfo_.setText("Dataset load failed. " + ex.getMessage());
+			mmstudio_.getLogManager().logError(ex);
+		}
 	}
 
 	/**
@@ -386,6 +437,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 		worker_ = new AcqRunner(core_, dataDir_, acqName_, cbTimeLapse_.isSelected(), timePoints_, channels_, timeIntervalMs_);
 		worker_.addListener(this);
 		worker_.start();
+		statusInfo_.setText("Starting acquisition...");
 		updateFormState();
 		updateChannelCommands();
 	}
@@ -400,9 +452,10 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 			if(worker_.isAlive())
 				worker_.join();
 		}catch(InterruptedException e) {
-			e.printStackTrace();
+			mmstudio_.getLogManager().logError(e);
 		}
 		worker_ = null;
+		statusInfo_.setText("Acquisition stopped by the user");
 		updateFormState();
 		updateChannelCommands();
 	}
@@ -412,6 +465,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	 */
 	protected void addChannel() {
 		// Obtain channels list
+		//String[] channelSource = core_.getAvailableConfigs("CHANNEL").toArray();
 		String[] channelSource = { "CYAN", "GREEN", "RED", "UV", "TEAL" }; // TODO: Obtain channels from the light engine device adapter
 		Vector<String> allchannels = new Vector<>();
 		for(String s : channelSource) {
@@ -419,14 +473,21 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 				continue;
 			allchannels.add(s);
 		}
+		if(allchannels.isEmpty()) {
+			statusInfo_.setText("No channels found");
+			return;
+		}
+
 
 		// Show channel selection dialog
 		ChannelSelectionDlg wnd = new ChannelSelectionDlg(this, allchannels);
 		wnd.setVisible(true);
 
 		String schannel = wnd.getSelectedChannel();
-		if(schannel == null || schannel.isEmpty())
+		if(schannel == null || schannel.isEmpty()) {
+			statusInfo_.setText("No channel selected");
 			return;
+		}
 		channels_.add(schannel);
 		listChannels_.setListData(channels_);
 		updateAcqInfo(false);
@@ -499,7 +560,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 		stopAcqButton_.setVisible(runnerActive_);
 		progressBar_.setVisible(runnerActive_);
 		tbTimePoints_.setEnabled(!runnerActive_);
-		tbTimeInterval_.setEnabled(!runnerActive_);
+		tbTimeInterval_.setEnabled(!runnerActive_ && cbTimeLapse_.isSelected());
 		cbTimeLapse_.setEnabled(!runnerActive_);
 		tbLocation_.setEnabled(!runnerActive_);
 		tbName_.setEnabled(!runnerActive_);
@@ -515,7 +576,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 		acqName_ = tbName_.getText().replaceAll("[/\\\\*!':]", "-").trim();
 		dataDir_ = tbLocation_.getText().trim();
 		try {
-			timePoints_ = Integer.parseInt(tbTimePoints_.getText());
+			timePoints_ = (int)tbTimePoints_.getValue();
 		} catch(NumberFormatException e) {
 			tbTimePoints_.setValue(timePoints_);
 		}
@@ -556,8 +617,15 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 			labelImageSize_.setText(String.format("Image size: %d x %d", imgw, imgh));
 			labelPixelSize_.setText(String.format("Pixel size: %d bytes", bpp));
 		} catch(Exception e) {
-			e.printStackTrace();
+			mmstudio_.getLogManager().logError(e);
 		}
+	}
+
+	/**
+	 * Update UI for time lapse parameters
+	 */
+	protected void updateTimeLapseOptions() {
+		tbTimeInterval_.setEnabled(!runnerActive_ && cbTimeLapse_.isSelected());
 	}
 
 	/**
@@ -577,17 +645,37 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	@Override
 	public void notifyWorkCompleted() {
 		runnerActive_ = false;
+		statusInfo_.setText("Acquisition completed successfully");
+		updateFormState();
+		updateChannelCommands();
+	}
+
+	/**
+	 * Acquisition failed event handler
+	 * @param msg Error message
+	 */
+	@Override
+	public void notifyWorkFailed(String msg) {
+		runnerActive_ = false;
+		statusInfo_.setText("ERROR: " + msg);
 		updateFormState();
 		updateChannelCommands();
 	}
 
 	/**
 	 * Acquisition status update event handler
+	 * @param curr Current image index
+	 * @param total Total number of images
+	 * @param image Current image handle
 	 */
 	@Override
-	public void notifyStatusUpdate(int curr, int total) {
+	public void notifyStatusUpdate(int curr, int total, Image image) {
 		int perc = (int)Math.ceil(100.0 * (double)curr / total);
 		progressBar_.setString(String.format("%d / %d (%d%%)", curr, total, perc));
+		statusInfo_.setText(String.format("Running: %d / %d", curr, total));
+		if(image == null)
+			return;
+		// TODO: Display current image
 	}
 
 	/**
@@ -605,41 +693,40 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 		boolean directio = args.length > 1 && Integer.parseInt(args[1]) == 1;
 		int flushCycle = args.length > 2 ? Integer.parseInt(args[2]) : 0;
 
+		MMStudio studio = new MMStudio(false, null);
 		try {
 			// Create micro-manager instance
 			UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-			//MMStudio studio = new MMStudio(false, null);
-			CMMCore core = new CMMCore();
 
 			// Setup storage engine
 			if(storageEngine.equals("zarr"))
-				core.loadDevice("Store", "go2scope", "AcquireZarrStorage");
+				studio.getCMMCore().loadDevice("Store", "go2scope", "AcquireZarrStorage");
 			else
-				core.loadDevice("Store", "go2scope", "G2SBigTiffStorage");
+				studio.getCMMCore().loadDevice("Store", "go2scope", "G2SBigTiffStorage");
 
 			// Setup demo camera
-			core.loadDevice("Camera", "DemoCamera", "DCam");
+			studio.getCMMCore().loadDevice("Camera", "DemoCamera", "DCam");
 
 			// Initialize the system, this will in turn initialize each device
-			core.initializeAllDevices();
+			studio.getCMMCore().initializeAllDevices();
 
 			// Configure the camera device
-			core.setProperty("Camera", "PixelType", "16bit");
-			core.setProperty("Camera", "OnCameraCCDXSize", "4432");
-			core.setProperty("Camera", "OnCameraCCDYSize", "2368");
-			core.setExposure(5.0);
+			studio.getCMMCore().setProperty("Camera", "PixelType", "16bit");
+			studio.getCMMCore().setProperty("Camera", "OnCameraCCDXSize", "4432");
+			studio.getCMMCore().setProperty("Camera", "OnCameraCCDYSize", "2368");
+			studio.getCMMCore().setExposure(5.0);
 
 			// Configure the storage device
 			if(storageEngine.equals("bigtiff")) {
-				core.setProperty("Store", "DirectIO", directio ? 1 : 0);
-				core.setProperty("Store", "FlushCycle", flushCycle);
+				studio.getCMMCore().setProperty("Store", "DirectIO", directio ? 1 : 0);
+				studio.getCMMCore().setProperty("Store", "FlushCycle", flushCycle);
 			}
 
 			// Create main window
-			TargaAcqWindow window = new TargaAcqWindow(core);
+			TargaAcqWindow window = new TargaAcqWindow(studio);
 			window.setVisible(true);
 		} catch(Exception e) {
-			e.printStackTrace();
+			studio.getLogManager().logError(e);
 		}
 	}
 }

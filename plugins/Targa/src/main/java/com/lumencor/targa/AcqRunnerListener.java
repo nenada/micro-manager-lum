@@ -1,6 +1,9 @@
 package org.lumencor.targa;
 
+import org.micromanager.data.Image;
+
 public interface AcqRunnerListener {
 	void notifyWorkCompleted();
-	void notifyStatusUpdate(int curr, int total);
+	void notifyWorkFailed(String msg);
+	void notifyStatusUpdate(int curr, int total, Image image);
 }
