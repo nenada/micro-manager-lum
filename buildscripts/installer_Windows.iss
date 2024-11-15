@@ -23,14 +23,14 @@
 
 [Setup]
 AlwaysShowDirOnReadyPage=yes
-AppName=Micro-Manager-2.0
-AppVerName=Micro-Manager-2.0
-AppPublisher=UCSF
+AppName=Micro-Manager-Targa
+AppVerName=Micro-Manager-Targa
+AppPublisher=Lumencor
 AppPublisherURL=http://www.micro-manager.org
 AppSupportURL=http://www.micro-manager.org
 AppUpdatesURL=http://www.micro-manager.org
-DefaultDirName=C:/Program Files/Micro-Manager-2.0
-DefaultGroupName=Micro-Manager-2.0
+DefaultDirName=C:/Program Files/Micro-Manager-Targa
+DefaultGroupName=Micro-Manager-Targa
 DisableDirPage=no
 OutputBaseFilename=MMSetup_{#MMArch_bits}bit
 Compression=lzma
@@ -69,11 +69,16 @@ Type: filesandordirs; Name: {app}\Microsoft.VC90.OPENMP
 
 [Files]
 Source: "..\..\3rdparty\Microsoft\vcredist\2015-2022\vc_redist.{#MMArch_x86x64}.exe"; DestDir: "{app}"; DestName: "vc_redist.{#MMArch_x86x64}.exe"; Flags: deleteafterinstall
-Source: "..\..\3rdparty\Lumencor\Dover\Debug\DoverAPI.dll"; DestDir: "{app}"
-Source: "..\..\3rdparty\Lumencor\Dover\Debug\SmartStageAxis.dll"; DestDir: "{app}"
-Source: "..\..\3rdparty\Lumencor\Dover\Debug\vciapi.dll"; DestDir: "{app}"
-Source: "..\..\3rdparty\Lumencor\Dover\Debug\vcinpl.dll"; DestDir: "{app}"
-Source: "..\..\3rdparty\CZI\acquire-zarr\bin\acquire-zarr.dll"; DestDir: "{app}"
+
+;; Targa Specific
+Source: "..\..\3rdparty\Lumencor\Dover\Debug\DoverAPI.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\3rdparty\Lumencor\Dover\Debug\SmartStageAxis.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\3rdparty\Lumencor\Dover\Debug\vciapi.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\3rdparty\Lumencor\Dover\Debug\vcinpl.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\3rdparty\CZI\acquire-zarr\bin\acquire-zarr.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\targa-configs\Dover\SupportFolder\*"; DestDir: "{app}\SupportFolder"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\targa-configs\targa.cfg"; DestDir: "{app}"; Flags: onlyifdoesntexist; Permissions: users-modify
+;; end Targa specific
 
 
 [Run]
