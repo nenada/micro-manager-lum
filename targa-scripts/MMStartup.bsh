@@ -1,0 +1,2 @@
+// Targa startup script
+mmc.setROI(1032, 0, 2368, 2368);
