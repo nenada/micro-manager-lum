@@ -4,6 +4,8 @@ import mmcorej.CMMCore;
 import mmcorej.LongVector;
 import mmcorej.StorageDataType;
 import mmcorej.TaggedImage;
+import org.micromanager.data.Image;
+import org.micromanager.data.internal.DefaultImage;
 
 import java.util.Set;
 import java.util.Vector;
@@ -60,7 +62,7 @@ public class AcqRunner extends Thread {
 		try {
 			// Create the dataset
 			LongVector shape = new LongVector();
-			shape.add(0);
+			shape.add(1);
 			shape.add(timePoints_);
 			shape.add(channels_.isEmpty() ? 1 : channels_.size());
 			shape.add((int)core_.getImageWidth());
@@ -79,7 +81,7 @@ public class AcqRunner extends Thread {
 			// Notify that the acquisition is complete
 			notifyListenersComplete();
 		} catch (Exception e) {
-			e.printStackTrace();
+			notifyListenersFail(e.getMessage());
 		}
 	}
 
@@ -100,6 +102,7 @@ public class AcqRunner extends Thread {
 	 */
 	protected void runTimeLapse(String handle) throws Exception {
 		int numberOfChannels = channels_.isEmpty() ? 1 : channels_.size();
+		boolean isshort = core_.getBytesPerPixel() == 2;
 		for(int j = 0; j < timePoints_; j++) {
 			long tpStart = System.nanoTime();
 			for(int k = 0; k < numberOfChannels; k++) {
@@ -123,12 +126,17 @@ public class AcqRunner extends Thread {
 				img.tags.put("Image-index", current_);
 
 				// Add image to stream
-				short[] bx = (short[])img.pix;
-				core_.addImage(handle, bx.length, (short[])img.pix, coords, img.tags.toString());
+				if(isshort) {
+					short[] bx = (short[])img.pix;
+					core_.addImage(handle, bx.length, bx, coords, img.tags.toString());
+				} else {
+					byte[] bx = (byte[])img.pix;
+					core_.addImage(handle, bx.length, bx, coords, img.tags.toString());
+				}
 
 				// Update acquisition progress
 				current_++;
-				notifyListenersStatusUpdate();
+				notifyListenersStatusUpdate(new DefaultImage(img));
 			}
 			if(!active_)
 				break;
@@ -144,6 +152,7 @@ public class AcqRunner extends Thread {
 	 */
 	protected void runAcquisition(String handle) throws Exception {
 		int numberOfChannels = channels_.isEmpty() ? 1 : channels_.size();
+		boolean isshort = core_.getBytesPerPixel() == 2;
 		core_.startSequenceAcquisition(total_, 0.0, true);
 		for(int j = 0; j < timePoints_; j++) {
 			if(core_.getBufferFreeCapacity() < numberOfChannels * 10)
@@ -151,7 +160,7 @@ public class AcqRunner extends Thread {
 			for(int k = 0; k < numberOfChannels; k++) {
 
 				if(core_.isBufferOverflowed()) {
-					System.out.println("Buffer overflow!!");
+					notifyListenersFail("Buffer overflow!!");
 					break;
 				}
 
@@ -177,12 +186,17 @@ public class AcqRunner extends Thread {
 				img.tags.put("Image-index", current_);
 
 				// Add image to stream
-				short[] bx = (short[])img.pix;
-				core_.addImage(handle, bx.length, (short[])img.pix, coords, img.tags.toString());
+				if(isshort) {
+					short[] bx = (short[])img.pix;
+					core_.addImage(handle, bx.length, bx, coords, img.tags.toString());
+				} else {
+					byte[] bx = (byte[])img.pix;
+					core_.addImage(handle, bx.length, bx, coords, img.tags.toString());
+				}
 
 				// Update acquisition progress
 				current_++;
-				notifyListenersStatusUpdate();
+				notifyListenersStatusUpdate(new DefaultImage(img));
 			}
 			if(core_.isBufferOverflowed() || !active_)
 				break;
@@ -217,10 +231,20 @@ public class AcqRunner extends Thread {
 	}
 
 	/**
-	 * Notify event listeners of acquisition status update
+	 * Notify event listeners of acquisition error
+	 * @param msg Error message
 	 */
-	private synchronized void notifyListenersStatusUpdate() {
+	private synchronized void notifyListenersFail(String msg) {
 		for(AcqRunnerListener listener : listeners_)
-			listener.notifyStatusUpdate(current_, total_);
+			listener.notifyWorkFailed(msg);
+	}
+
+	/**
+	 * Notify event listeners of acquisition status update
+	 * @param img Acquired image
+	 */
+	private synchronized void notifyListenersStatusUpdate(Image img) {
+		for(AcqRunnerListener listener : listeners_)
+			listener.notifyStatusUpdate(current_, total_, img);
 	}
 }

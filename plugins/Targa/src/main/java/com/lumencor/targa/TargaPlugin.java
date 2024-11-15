@@ -53,7 +53,7 @@ public class TargaPlugin implements MenuPlugin, SciJavaPlugin {
 	@Override
 	public void onPluginSelected() {
 		if(frame_ == null)
-			frame_ = new TargaAcqWindow(studio_.getCMMCore());
+			frame_ = new TargaAcqWindow(studio_);
 		frame_.setVisible(true);
 	}
 }
