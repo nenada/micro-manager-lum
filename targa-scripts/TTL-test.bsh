@@ -3,6 +3,7 @@
 channelGroup = "CHANNEL";
 channels = mmc.getAvailableConfigs(channelGroup);
 numberOfTrials = 100;
+exposureMs = mmc.getExposure();
 
 for (i=0; i<numberOfTrials; i++) {
 	print("\nCycle " + (i + 1));
@@ -12,6 +13,7 @@ for (i=0; i<numberOfTrials; i++) {
 		deltaT = java.lang.System.currentTimeMillis() - startT;
 		ch = mmc.getCurrentConfig(channelGroup);
 		print(ch + " : " + deltaT + "ms");
+		mmc.setExposure(exposureMs);
 	}
 }
 
