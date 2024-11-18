@@ -24,6 +24,8 @@ public class AcqRunner extends Thread {
 	private boolean active_;
 	private int current_;
 	private int total_;
+	private int buffFree_;
+	private int buffTotal_;
 
 	/**
 	 * Class constructor
@@ -43,6 +45,8 @@ public class AcqRunner extends Thread {
 		timeLapse_ = timelapse;
 		timePoints_ = timepoints;
 		timeInterval_ = timeintervalms;
+		buffFree_ = 0;
+		buffTotal_ = 0;
 		channels_ = channels;
 		stateMutex_ = new Object();
 	}
@@ -70,17 +74,27 @@ public class AcqRunner extends Thread {
 			String handle = core_.createDataset(location_, name_, shape, StorageDataType.StorageDataType_GRAY16, "");
 
 			// Acquire images
-			if(timeLapse_)
-				runTimeLapse(handle);
-			else
-				runAcquisition(handle);
+			String error = "";
+			try {
+				buffTotal_ = core_.getBufferTotalCapacity();
+				if(timeLapse_)
+					runTimeLapse(handle);
+				else
+					runAcquisition(handle);
+			} catch(Exception ex) {
+				core_.stopSequenceAcquisition();
+				error = ex.getMessage();
+			}
 
 			// Close the dataset
 			core_.closeDataset(handle);
 
 			// Notify that the acquisition is complete
-			notifyListenersComplete();
-		} catch (Exception e) {
+			if(error.isEmpty())
+				notifyListenersComplete();
+			else
+				notifyListenersFail(error);
+		} catch(Exception e) {
 			notifyListenersFail(e.getMessage());
 		}
 	}
@@ -112,6 +126,7 @@ public class AcqRunner extends Thread {
 						break;
 				}
 				core_.snapImage();
+				buffFree_ = core_.getBufferFreeCapacity();
 				TaggedImage img = core_.getTaggedImage();
 
 				// create coordinates for the image
@@ -141,8 +156,9 @@ public class AcqRunner extends Thread {
 			if(!active_)
 				break;
 			long tpEnd = System.nanoTime();
-			int sleepMs = timeInterval_ - (int)((tpEnd - tpStart) / 1000000.0);
-			Thread.sleep(sleepMs);
+			int sleepMs = timeInterval_ - (int)((tpEnd - tpStart) / 1000000.0 + core_.getExposure());
+			if(sleepMs > 0)
+				Thread.sleep(sleepMs);
 		}
 	}
 
@@ -155,10 +171,10 @@ public class AcqRunner extends Thread {
 		boolean isshort = core_.getBytesPerPixel() == 2;
 		core_.startSequenceAcquisition(total_, 0.0, true);
 		for(int j = 0; j < timePoints_; j++) {
-			if(core_.getBufferFreeCapacity() < numberOfChannels * 10)
-				System.out.printf("\nWARNING!!! Low buffer space %d / %d\n\n", core_.getBufferFreeCapacity(), core_.getBufferTotalCapacity());
+			buffFree_ = core_.getBufferFreeCapacity();
+			if(buffFree_ < numberOfChannels * 10)
+				System.out.printf("\nWARNING!!! Low buffer space %d / %d\n\n", buffFree_, core_.getBufferTotalCapacity());
 			for(int k = 0; k < numberOfChannels; k++) {
-
 				if(core_.isBufferOverflowed()) {
 					notifyListenersFail("Buffer overflow!!");
 					break;
@@ -202,7 +218,7 @@ public class AcqRunner extends Thread {
 				break;
 		}
 
-		// we are done so close the dataset
+		// we are done so stop sequence acquisition
 		core_.stopSequenceAcquisition();
 	}
 
@@ -245,6 +261,6 @@ public class AcqRunner extends Thread {
 	 */
 	private synchronized void notifyListenersStatusUpdate(Image img) {
 		for(AcqRunnerListener listener : listeners_)
-			listener.notifyStatusUpdate(current_, total_, img);
+			listener.notifyStatusUpdate(current_, total_, img, buffFree_, buffTotal_);
 	}
 }

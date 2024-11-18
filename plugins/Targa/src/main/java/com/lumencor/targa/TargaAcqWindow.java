@@ -15,7 +15,6 @@ import java.util.Vector;
 import java.util.prefs.Preferences;
 
 import org.micromanager.Studio;
-import org.micromanager.data.Datastore;
 import org.micromanager.data.Image;
 import org.micromanager.internal.MMStudio;
 import org.micromanager.internal.utils.FileDialogs;
@@ -53,9 +52,13 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	private final JLabel labelExposure_;
 	private final JLabel labelFramerate_;
 	private final JLabel labelImageSize_;
+	private final JLabel labelPixelDataSize_;
 	private final JLabel labelPixelSize_;
 	private final JLabel statusInfo_;
+	private final JLabel labelCbuffStatus_;
+	private final JLabel labelCbuffMemory_;
 	private final JProgressBar progressBar_;
+	private final JProgressBar cbuffCapacity_;
 
 	private final Studio mmstudio_;
 	private final CMMCore core_;
@@ -65,6 +68,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	private int timePoints_;
 	private int timeIntervalMs_;
 	private boolean runnerActive_;
+	private boolean coreInit_;
 	private AcqRunner worker_;
 
 	/**
@@ -73,6 +77,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	 */
 	TargaAcqWindow(Studio studio) {
 		super();
+		coreInit_ = false;
 		runnerActive_ = false;
 		mmstudio_ = studio;
 		core_ = studio.getCMMCore();
@@ -88,8 +93,8 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 		super.setTitle("Targa Acquisition " + TargaPlugin.VERSION_INFO);
 		super.setIconImage(Toolkit.getDefaultToolkit().getImage(getClass().getResource("/org/micromanager/icons/microscope.gif")));
 		super.setResizable(false);
-		super.setPreferredSize(new Dimension(800, 500));
-		super.setBounds(400, 200, 800, 500);
+		super.setPreferredSize(new Dimension(800, 530));
+		super.setBounds(400, 200, 800, 530);
 		super.pack();
 
 		// Set layout manager
@@ -298,10 +303,15 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 		layout.putConstraint(SpringLayout.WEST, labelImageSize_, 0, SpringLayout.WEST, labelDataSize_);
 		layout.putConstraint(SpringLayout.NORTH, labelImageSize_, 10, SpringLayout.SOUTH, labelFramerate_);
 
+		labelPixelDataSize_ = new JLabel("Bytes per pixel: -");
+		contentPane.add(labelPixelDataSize_);
+		layout.putConstraint(SpringLayout.WEST, labelPixelDataSize_, 0, SpringLayout.WEST, labelDataSize_);
+		layout.putConstraint(SpringLayout.NORTH, labelPixelDataSize_, 10, SpringLayout.SOUTH, labelImageSize_);
+
 		labelPixelSize_ = new JLabel("Pixel size: -");
 		contentPane.add(labelPixelSize_);
-		layout.putConstraint(SpringLayout.WEST, labelPixelSize_, 0, SpringLayout.WEST, labelDataSize_);
-		layout.putConstraint(SpringLayout.NORTH, labelPixelSize_, 10, SpringLayout.SOUTH, labelImageSize_);
+		layout.putConstraint(SpringLayout.WEST, labelPixelSize_, 0, SpringLayout.WEST, labelPixelDataSize_);
+		layout.putConstraint(SpringLayout.NORTH, labelPixelSize_, 10, SpringLayout.SOUTH, labelPixelDataSize_);
 
 		// Add start acquisition button
 		startAcqButton_ = new JButton("Start Acquisition");
@@ -327,6 +337,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 		// Add progress bar
 		progressBar_ = new JProgressBar();
 		progressBar_.setValue(0);
+		progressBar_.setMinimum(0);
 		progressBar_.setStringPainted(true);
 		progressBar_.setString("0 / 0 (0%)");
 		progressBar_.setVisible(false);
@@ -335,8 +346,34 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 		layout.putConstraint(SpringLayout.EAST, progressBar_, -40, SpringLayout.WEST, stopAcqButton_);
 		layout.putConstraint(SpringLayout.SOUTH, progressBar_, -8, SpringLayout.NORTH, statusPanel);
 
+		// Add circular buffer status label
+		labelCbuffStatus_ = new JLabel("Sequence buffer usage:");
+		labelCbuffStatus_.setVisible(false);
+		contentPane.add(labelCbuffStatus_);
+		layout.putConstraint(SpringLayout.WEST, labelCbuffStatus_, 0, SpringLayout.WEST, progressBar_);
+		layout.putConstraint(SpringLayout.SOUTH, labelCbuffStatus_, -10, SpringLayout.NORTH, progressBar_);
+
+		// Add circular buffer status bar
+		cbuffCapacity_ = new JProgressBar();
+		cbuffCapacity_.setValue(0);
+		cbuffCapacity_.setMinimum(0);
+		cbuffCapacity_.setStringPainted(true);
+		cbuffCapacity_.setString("0 / 0 (0%)");
+		cbuffCapacity_.setVisible(false);
+		contentPane.add(cbuffCapacity_);
+		layout.putConstraint(SpringLayout.WEST, cbuffCapacity_, 10, SpringLayout.EAST, labelCbuffStatus_);
+		layout.putConstraint(SpringLayout.EAST, cbuffCapacity_, 200, SpringLayout.EAST, labelCbuffStatus_);
+		layout.putConstraint(SpringLayout.SOUTH, cbuffCapacity_, -8, SpringLayout.NORTH, progressBar_);
+
+		// Add circular buffer memory footprint label
+		labelCbuffMemory_ = new JLabel("0 MB");
+		labelCbuffMemory_.setVisible(false);
+		contentPane.add(labelCbuffMemory_);
+		layout.putConstraint(SpringLayout.WEST, labelCbuffMemory_, 10, SpringLayout.EAST, cbuffCapacity_);
+		layout.putConstraint(SpringLayout.NORTH, labelCbuffMemory_, 0, SpringLayout.NORTH, labelCbuffStatus_);
+
 		loadSettings();
-		updateAcqInfo(true);
+		updateAcqInfo();
 	}
 
 	/**
@@ -422,7 +459,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 			//mmstudio_.displays().manage(store);
 			//mmstudio_.displays().loadDisplays(store);
 
-			statusInfo_.setText(String.format("Dataset loaded successfully: %s, %d x %d, images %d, type %s", result.getAbsolutePath(), w, h, numImages, type));
+			statusInfo_.setText(String.format("Dataset loaded successfully: %d x %d, images %d, type %s", w, h, numImages, type));
 		} catch(Exception ex) {
 			statusInfo_.setText("Dataset load failed. " + ex.getMessage());
 			mmstudio_.getLogManager().logError(ex);
@@ -490,7 +527,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 		}
 		channels_.add(schannel);
 		listChannels_.setListData(channels_);
-		updateAcqInfo(false);
+		updateAcqInfo();
 	}
 
 	/**
@@ -502,7 +539,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 
 		channels_.remove(listChannels_.getSelectedIndex());
 		listChannels_.setListData(channels_);
-		updateAcqInfo(false);
+		updateAcqInfo();
 	}
 
 	/**
@@ -567,6 +604,9 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 		loadButton_.setEnabled(!runnerActive_);
 		chooseLocationButton_.setEnabled(!runnerActive_);
 		listChannels_.setEnabled(!runnerActive_);
+		labelCbuffStatus_.setVisible(runnerActive_);
+		cbuffCapacity_.setVisible(runnerActive_);
+		labelCbuffMemory_.setVisible(runnerActive_);
 	}
 
 	/**
@@ -585,24 +625,28 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 		} catch(NumberFormatException e) {
 			tbTimeInterval_.setValue(timeIntervalMs_);
 		}
-		updateAcqInfo(false);
+		updateAcqInfo();
 	}
 
 	/**
 	 * Update acquisition info labels
-	 * @param init Is method call during initialization
 	 */
-	protected void updateAcqInfo(boolean init) {
+	protected void updateAcqInfo() {
 		try {
-			if(init)
+			if(core_ == null)
+				return;
+			if(!coreInit_) {
 				core_.snapImage();
+				coreInit_ = true;
+			}
 			int bpp = (int)core_.getBytesPerPixel();
 			int imgw = (int)core_.getImageWidth();
 			int imgh = (int)core_.getImageHeight();
 			double exp = core_.getExposure();
 			double fps = exp == 0 ? 0 : 1000.0 / exp;
-			double durms = exp * timePoints_;
+			double durms = (exp + (cbTimeLapse_.isSelected() ? timeIntervalMs_ : 0)) * timePoints_;
 			double dsizemb = imgw * imgh * bpp * timePoints_ * (channels_.isEmpty() ? 1 : channels_.size()) / (1024.0 * 1024.0);
+			double psize = core_.getPixelSizeUm();
 
 			if(dsizemb < 1024.0)
 				labelDataSize_.setText(String.format("Dataset size: %.1f MB", dsizemb));
@@ -615,10 +659,26 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 			labelExposure_.setText(String.format("Camera exposure: %.1f ms", exp));
 			labelFramerate_.setText(String.format("Frame rate: %.1f FPS", fps));
 			labelImageSize_.setText(String.format("Image size: %d x %d", imgw, imgh));
-			labelPixelSize_.setText(String.format("Pixel size: %d bytes", bpp));
+			labelPixelDataSize_.setText(String.format("Bytes per pixel: %d bytes", bpp));
+			labelPixelSize_.setText(String.format("Pixel size: %.1f um", psize));
 		} catch(Exception e) {
 			mmstudio_.getLogManager().logError(e);
 		}
+	}
+
+	/**
+	 * Update acquisition info labels after exposure update
+	 * @param nexp New exposure value (ms)
+	 */
+	protected void updateExposure(double nexp) {
+		double fps = nexp == 0 ? 0 : 1000.0 / nexp;
+		double durms = (nexp + (cbTimeLapse_.isSelected() ? timeIntervalMs_ : 0)) * timePoints_;
+		if(durms < 100.0)
+			labelDuration_.setText(String.format("Dataset duration: %.1f ms", durms));
+		else
+			labelDuration_.setText(String.format("Dataset duration: %.2f s", durms / 1000.0));
+		labelExposure_.setText(String.format("Camera exposure: %.1f ms", nexp));
+		labelFramerate_.setText(String.format("Frame rate: %.1f FPS", fps));
 	}
 
 	/**
@@ -626,6 +686,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	 */
 	protected void updateTimeLapseOptions() {
 		tbTimeInterval_.setEnabled(!runnerActive_ && cbTimeLapse_.isSelected());
+		updateAcqInfo();
 	}
 
 	/**
@@ -667,11 +728,26 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	 * @param curr Current image index
 	 * @param total Total number of images
 	 * @param image Current image handle
+	 * @param bufffree Circular buffer free capacity
+	 * @param bufftotal Circular buffer total capacity
 	 */
 	@Override
-	public void notifyStatusUpdate(int curr, int total, Image image) {
+	public void notifyStatusUpdate(int curr, int total, Image image, int bufffree, int bufftotal) {
 		int perc = (int)Math.ceil(100.0 * (double)curr / total);
+		progressBar_.setMaximum(total);
+		progressBar_.setValue(curr);
 		progressBar_.setString(String.format("%d / %d (%d%%)", curr, total, perc));
+
+		int buffperc = (int)Math.ceil(100.0 * (double)(bufftotal - bufffree) / bufftotal);
+		cbuffCapacity_.setMaximum(bufftotal);
+		cbuffCapacity_.setValue(bufftotal - bufffree);
+		cbuffCapacity_.setString(String.format("%d / %d (%d%%)", bufftotal - bufffree, bufftotal, buffperc));
+
+		double cbuffmb = core_.getCircularBufferMemoryFootprint();
+		if(cbuffmb > 1024.0)
+			labelCbuffMemory_.setText(String.format("%.2f GB", cbuffmb / 1024.0));
+		else
+			labelCbuffMemory_.setText(String.format("%.1f MB", cbuffmb));
 		statusInfo_.setText(String.format("Running: %d / %d", curr, total));
 		if(image == null)
 			return;

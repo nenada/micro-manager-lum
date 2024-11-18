@@ -1,7 +1,9 @@
 package org.lumencor.targa;
 
+import com.google.common.eventbus.Subscribe;
 import org.micromanager.MenuPlugin;
 import org.micromanager.Studio;
+import org.micromanager.events.ChannelExposureEvent;
 import org.scijava.plugin.Plugin;
 import org.scijava.plugin.SciJavaPlugin;
 
@@ -55,5 +57,19 @@ public class TargaPlugin implements MenuPlugin, SciJavaPlugin {
 		if(frame_ == null)
 			frame_ = new TargaAcqWindow(studio_);
 		frame_.setVisible(true);
+	}
+
+	/**
+	 * Event signalling that the camera exposure time associated with a
+	 * configgroup-configpreset has been changed.
+	 *
+	 * @param event info about the event.
+	 */
+	@Subscribe
+	public void onChannelExposure(ChannelExposureEvent event) {
+		if(frame_ == null)
+			return;
+		double nexp = event.getNewExposureTime();
+		frame_.updateExposure(nexp);
 	}
 }
