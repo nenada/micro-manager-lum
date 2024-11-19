@@ -26,12 +26,18 @@ public class AcqRunner extends Thread {
 	private int total_;
 	private int buffFree_;
 	private int buffTotal_;
+	// Readout configuration must match the configuration in Micro-manager
+	private final String READOUT_CONFIG_GROUP = "Readout";
+	private final String READOUT_STANDARD_CONFIG = "Standard";
+	private final String READOUT_FAST_CONFIG = "Fast";
+	private final String TTL_SWITCH_DEV_NAME = "TTLSwitch";
+	private final String TTL_SWITCH_PROP_SEQUENCE = "ChannelSequence";
 
 	/**
 	 * Class constructor
 	 * @parma core MMCore interface
 	 * @param location Save location
-	 * @param name Acauisition / Dataset name
+	 * @param name Acquisition / Dataset name
 	 * @param timelapse Run time-lapse acquisition
 	 * @param timepoints Number of timepoints
 	 * @param channels Channels list
@@ -71,16 +77,32 @@ public class AcqRunner extends Thread {
 			shape.add(channels_.isEmpty() ? 1 : channels_.size());
 			shape.add((int)core_.getImageWidth());
 			shape.add((int)core_.getImageHeight());
-			String handle = core_.createDataset(location_, name_, shape, StorageDataType.StorageDataType_GRAY16, "");
+			long bytesPerPixel = core_.getBytesPerPixel();
+			StorageDataType pixType = StorageDataType.StorageDataType_UNKNOWN;
+			if (bytesPerPixel == 2)
+				pixType = StorageDataType.StorageDataType_GRAY16;
+			else if (bytesPerPixel == 1)
+				pixType = StorageDataType.StorageDataType_GRAY8;
+			else
+				throw new Exception("Unsupported pixel depth of " + bytesPerPixel + " bytes.");
+			String handle = core_.createDataset(location_, name_, shape, pixType, "");
+
+			// save the initial state
+			double exposureMs = core_.getExposure();
+			String chGroup = core_.getChannelGroup();
+			String currentChannel = "";
+			if (!chGroup.isEmpty())
+				currentChannel = core_.getCurrentConfig(chGroup);
+			String readoutMode = core_.getCurrentConfig(READOUT_CONFIG_GROUP);
 
 			// Acquire images
 			String error = "";
 			try {
 				buffTotal_ = core_.getBufferTotalCapacity();
 				if(timeLapse_)
-					runTimeLapse(handle);
+					runTimeLapse(handle, pixType);
 				else
-					runAcquisition(handle);
+					runAcquisition(handle, pixType);
 			} catch(Exception ex) {
 				core_.stopSequenceAcquisition();
 				error = ex.getMessage();
@@ -88,6 +110,14 @@ public class AcqRunner extends Thread {
 
 			// Close the dataset
 			core_.closeDataset(handle);
+
+			// restore the initial state
+			if (!currentChannel.isEmpty())
+				core_.setConfig(chGroup, currentChannel);
+			if (core_.getExposure() != exposureMs)
+				core_.setExposure(exposureMs);
+			if (!readoutMode.equals(core_.getCurrentConfig(READOUT_CONFIG_GROUP)))
+				core_.setConfig(READOUT_CONFIG_GROUP, readoutMode);
 
 			// Notify that the acquisition is complete
 			if(error.isEmpty())
@@ -112,12 +142,27 @@ public class AcqRunner extends Thread {
 
 	/**
 	 * Run time-lapse sequence acquisition
-	 * @param handle Dataset UID
+	 * In this mode we are acquiring one image, waiting for the time interval and then acquiring the next image.
+	 * The camera operates in the "single snap" mode.
+	 *
+	 * @param handle  Dataset UID
+	 * @param pixType Pixel data type
 	 */
-	protected void runTimeLapse(String handle) throws Exception {
-		int numberOfChannels = channels_.isEmpty() ? 1 : channels_.size();
-		boolean isshort = core_.getBytesPerPixel() == 2;
-		notifyListenersStarted();
+	protected void runTimeLapse(String handle, StorageDataType pixType) throws Exception {
+		int numberOfSpecifiedChannels = channels_.size();
+		int numberOfChannels = channels_.isEmpty() ? 1 : numberOfSpecifiedChannels;
+		if (numberOfSpecifiedChannels == 1) {
+			core_.setConfig(core_.getChannelGroup(), channels_.get(0));
+			core_.waitForConfig(core_.getChannelGroup(), channels_.get(0));
+		}
+
+		// setup appropriate readout mode
+		// timelapse requires standard readout mode
+		String currentConfig = core_.getCurrentConfig(READOUT_CONFIG_GROUP);
+		if (!currentConfig.equals(READOUT_STANDARD_CONFIG))
+			core_.setConfig(READOUT_CONFIG_GROUP, READOUT_STANDARD_CONFIG);
+
+        notifyListenersStarted();
 		for(int j = 0; j < timePoints_; j++) {
 			long tpStart = System.nanoTime();
 			for(int k = 0; k < numberOfChannels; k++) {
@@ -126,6 +171,12 @@ public class AcqRunner extends Thread {
 					if(!active_)
 						break;
 				}
+				// switch to the next channel if we have more than one
+				if (numberOfSpecifiedChannels > 1) {
+					core_.setConfig(core_.getChannelGroup(), channels_.get(k));
+					core_.waitForConfig(core_.getChannelGroup(), channels_.get(k));
+				}
+
 				core_.snapImage();
 				buffFree_ = core_.getBufferFreeCapacity();
 				TaggedImage img = core_.getTaggedImage();
@@ -142,12 +193,15 @@ public class AcqRunner extends Thread {
 				img.tags.put("Image-index", current_);
 
 				// Add image to stream
-				if(isshort) {
+				if (pixType == StorageDataType.StorageDataType_GRAY16) {
+					// ware assuming t
 					short[] bx = (short[])img.pix;
 					core_.addImage(handle, bx.length, bx, coords, img.tags.toString());
-				} else {
+				} else if (pixType == StorageDataType.StorageDataType_GRAY8) {
 					byte[] bx = (byte[])img.pix;
 					core_.addImage(handle, bx.length, bx, coords, img.tags.toString());
+				} else {
+					throw new Exception("Unsupported pixel depth");
 				}
 
 				// Update acquisition progress
@@ -164,18 +218,46 @@ public class AcqRunner extends Thread {
 	}
 
 	/**
-	 * Run continous sequence acquisition
-	 * @param handle Dataset UID
+	 * Run continuous sequence acquisition
+	 *
+	 * @param handle  Dataset UID
+	 * @param pixType Pixel data type
 	 */
-	protected void runAcquisition(String handle) throws Exception {
-		int numberOfChannels = channels_.isEmpty() ? 1 : channels_.size();
-		boolean isshort = core_.getBytesPerPixel() == 2;
+	protected void runAcquisition(String handle, StorageDataType pixType) throws Exception {
+		int numberOfSpecifiedChannels = channels_.size();
+		int numberOfChannels = channels_.isEmpty() ? 1 : numberOfSpecifiedChannels;
+		String currentReadout = core_.getCurrentConfig(READOUT_CONFIG_GROUP);
+		if (numberOfSpecifiedChannels == 1) {
+			core_.setConfig(core_.getChannelGroup(), channels_.get(0));
+			core_.waitForConfig(core_.getChannelGroup(), channels_.get(0));
+		} else if (numberOfSpecifiedChannels > 1) {
+			// if more than one channel we must use standard readout mode
+			if (!currentReadout.equals(READOUT_STANDARD_CONFIG))
+				core_.setConfig(READOUT_CONFIG_GROUP, READOUT_STANDARD_CONFIG);
+
+			// set the sequence for the TTL switch device
+			if (core_.hasProperty(TTL_SWITCH_DEV_NAME, TTL_SWITCH_PROP_SEQUENCE)) {
+				core_.setProperty(TTL_SWITCH_DEV_NAME, TTL_SWITCH_PROP_SEQUENCE, "On");
+				StringBuilder sequence = new StringBuilder();
+				for (int i = 0; i < numberOfSpecifiedChannels; i++) {
+					sequence.append(channels_.get(i)).append(" ");
+				}
+				core_.setProperty(TTL_SWITCH_DEV_NAME, TTL_SWITCH_PROP_SEQUENCE, sequence.toString());
+			} else {
+				throw new Exception("Device " + TTL_SWITCH_DEV_NAME + " does not support property " + TTL_SWITCH_PROP_SEQUENCE);
+			}
+
+			// send command for multichannel TTL switching
+			core_.setProperty("TTLSwitch", "Label", "On"); // TODO: this is a placeholder
+		}
+
 		core_.startSequenceAcquisition(total_, 0.0, true);
 		notifyListenersStarted();
 		for(int j = 0; j < timePoints_; j++) {
 			buffFree_ = core_.getBufferFreeCapacity();
 			if(buffFree_ < numberOfChannels * 10)
 				System.out.printf("\nWARNING!!! Low buffer space %d / %d\n\n", buffFree_, core_.getBufferTotalCapacity());
+
 			for(int k = 0; k < numberOfChannels; k++) {
 				if(core_.isBufferOverflowed()) {
 					notifyListenersFail("Buffer overflow!!");
@@ -204,12 +286,14 @@ public class AcqRunner extends Thread {
 				img.tags.put("Image-index", current_);
 
 				// Add image to stream
-				if(isshort) {
+				if(pixType == StorageDataType.StorageDataType_GRAY16) {
 					short[] bx = (short[])img.pix;
 					core_.addImage(handle, bx.length, bx, coords, img.tags.toString());
-				} else {
+				} else if (pixType == StorageDataType.StorageDataType_GRAY8) {
 					byte[] bx = (byte[])img.pix;
 					core_.addImage(handle, bx.length, bx, coords, img.tags.toString());
+				} else {
+					throw new Exception("Unsupported pixel depth");
 				}
 
 				// Update acquisition progress

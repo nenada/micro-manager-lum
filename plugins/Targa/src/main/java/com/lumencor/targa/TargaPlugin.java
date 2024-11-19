@@ -13,7 +13,7 @@ import org.scijava.plugin.SciJavaPlugin;
  */
 @Plugin(type = MenuPlugin.class)
 public class TargaPlugin implements MenuPlugin, SciJavaPlugin {
-	public static final String VERSION_INFO = "1.0.0";
+	public static final String VERSION_INFO = "1.0.2";
 	private static final String COPYRIGHT_NOTICE = "Copyright (C) by Lumencor, 2024";
 	private static final String DESCRIPTION = "Image acquisition for Targa Microscope";
 	private static final String NAME = "Targa";
@@ -29,7 +29,7 @@ public class TargaPlugin implements MenuPlugin, SciJavaPlugin {
 
 	@Override
 	public String getSubMenu() {
-		return "Acquisition Tools";
+		return "";
 	}
 
 	@Override
