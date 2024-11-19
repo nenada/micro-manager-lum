@@ -1,5 +1,8 @@
 package org.lumencor.targa;
 
+import clojure.lang.IFn;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParser;
 import mmcorej.CMMCore;
 
 import javax.swing.*;
@@ -14,9 +17,19 @@ import java.util.Arrays;
 import java.util.Vector;
 import java.util.prefs.Preferences;
 
+import mmcorej.StorageDataType;
+import mmcorej.TaggedImage;
+import mmcorej.org.json.JSONException;
+import mmcorej.org.json.JSONObject;
 import org.micromanager.Studio;
+import org.micromanager.data.*;
 import org.micromanager.data.Image;
+import org.micromanager.data.internal.DefaultImage;
+import org.micromanager.data.internal.DefaultMetadata;
+import org.micromanager.data.internal.DefaultSummaryMetadata;
+import org.micromanager.display.DisplayWindow;
 import org.micromanager.internal.MMStudio;
+import org.micromanager.internal.propertymap.NonPropertyMapJSONFormats;
 import org.micromanager.internal.utils.FileDialogs;
 
 /**
@@ -443,27 +456,69 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 		File result = FileDialogs.openFile(this, "Please choose a valid dataset", FileDialogs.MM_DATA_SET);
 		if(result == null)
 			return;
-		try {
-			String handle = core_.loadDataset(result.getAbsolutePath());
-			mmcorej.LongVector shape = core_.getDatasetShape(handle);
-			mmcorej.StorageDataType type = core_.getDatasetPixelType(handle);
-			int w = shape.get((int)shape.size() - 1);
-			int h = shape.get((int)shape.size() - 2);
-			int numImages = 1;
-			for (int i = 0; i < shape.size() - 2; i++) {
-				numImages *= shape.get(i);
+		statusInfo_.setText(String.format("Loading file: %s...", result.getAbsolutePath()));
+		SwingUtilities.invokeLater(() -> {
+			try {
+				String handle = core_.loadDataset(result.getAbsolutePath());
+				mmcorej.LongVector shape = core_.getDatasetShape(handle);
+				mmcorej.StorageDataType type = core_.getDatasetPixelType(handle);
+				if(shape == null || type == null || shape.size() != 5) {
+					statusInfo_.setText("Dataset load failed. Selected file is not a valid dataset");
+					return;
+				}
+				String dsmeta = core_.getSummaryMeta(handle);
+				int w = shape.get((int)shape.size() - 1);
+				int h = shape.get((int)shape.size() - 2);
+				int bpp = type == StorageDataType.StorageDataType_GRAY16 ? 2 : 1;
+				int numImages = 1;
+				for(int i = 0; i < shape.size() - 2; i++)
+					numImages *= shape.get(i);
+
+				Datastore store = mmstudio_.data().createRAMDatastore();
+				DisplayWindow display = mmstudio_.displays().createDisplay(store);
+
+				if(dsmeta != null && !dsmeta.isEmpty()) {
+					try {
+						JsonElement je = new JsonParser().parse(dsmeta);
+						SummaryMetadata smeta = DefaultSummaryMetadata.fromPropertyMap(NonPropertyMapJSONFormats.metadata().fromGson(je));
+						store.setSummaryMetadata(smeta);
+					} catch(Exception e) {
+						mmstudio_.getLogManager().logError(e);
+					}
+				}
+				for(int i = 0; i < shape.get(0); i++) {
+					for(int j = 0; j < shape.get(1); j++) {
+						for(int k = 0; k < shape.get(2); k++) {
+							mmcorej.LongVector coords = new mmcorej.LongVector();
+							coords.add(i);
+							coords.add(j);
+							coords.add(k);
+							Object pixdata = core_.getImage(handle, coords);
+							if(pixdata == null)
+								continue;
+							Metadata meta = null;
+							String metastr = core_.getImageMeta(handle, coords);
+							if(metastr != null && !metastr.isEmpty()) {
+								try {
+									JsonElement je = new JsonParser().parse(metastr);
+									meta = DefaultMetadata.fromPropertyMap(NonPropertyMapJSONFormats.metadata().fromGson(je));
+								} catch(Exception e) {
+									mmstudio_.getLogManager().logError(e);
+								}
+							}
+							Coords.CoordsBuilder builder = mmstudio_.data().coordsBuilder();
+							builder.time(j).channel(k);
+							Image img = new DefaultImage(pixdata, w, h, bpp, 1, builder.build(), meta);
+							store.putImage(img);
+						}
+					}
+				}
+				statusInfo_.setText(String.format("Dataset loaded successfully: %d x %d, images %d, type %s", w, h, numImages, type));
+			} catch(Exception ex) {
+				statusInfo_.setText("Dataset load failed. " + ex.getMessage());
+				mmstudio_.getLogManager().logError(ex);
 			}
-
-			// TODO: Display data
-			//Datastore store = mmstudio_.getDataManager().loadData(this, result.getPath(), true);
-			//mmstudio_.displays().manage(store);
-			//mmstudio_.displays().loadDisplays(store);
-
-			statusInfo_.setText(String.format("Dataset loaded successfully: %d x %d, images %d, type %s", w, h, numImages, type));
-		} catch(Exception ex) {
-			statusInfo_.setText("Dataset load failed. " + ex.getMessage());
-			mmstudio_.getLogManager().logError(ex);
-		}
+		});
 	}
 
 	/**
@@ -645,7 +700,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 			double exp = core_.getExposure();
 			double fps = exp == 0 ? 0 : 1000.0 / exp;
 			double durms = (exp + (cbTimeLapse_.isSelected() ? timeIntervalMs_ : 0)) * timePoints_;
-			double dsizemb = imgw * imgh * bpp * timePoints_ * (channels_.isEmpty() ? 1 : channels_.size()) / (1024.0 * 1024.0);
+			double dsizemb = (double)imgw * (double)imgh * bpp * timePoints_ * (channels_.isEmpty() ? 1 : channels_.size()) / (1024.0 * 1024.0);
 			double psize = core_.getPixelSizeUm();
 
 			if(dsizemb < 1024.0)
@@ -712,6 +767,13 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	}
 
 	/**
+	 * Acquisition started event handler
+	 */
+	@Override
+	public void notifyWorkStarted() {
+	}
+
+	/**
 	 * Acquisition failed event handler
 	 * @param msg Error message
 	 */
@@ -749,9 +811,6 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 		else
 			labelCbuffMemory_.setText(String.format("%.1f MB", cbuffmb));
 		statusInfo_.setText(String.format("Running: %d / %d", curr, total));
-		if(image == null)
-			return;
-		// TODO: Display current image
 	}
 
 	/**

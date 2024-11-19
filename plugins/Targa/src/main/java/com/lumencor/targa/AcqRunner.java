@@ -117,6 +117,7 @@ public class AcqRunner extends Thread {
 	protected void runTimeLapse(String handle) throws Exception {
 		int numberOfChannels = channels_.isEmpty() ? 1 : channels_.size();
 		boolean isshort = core_.getBytesPerPixel() == 2;
+		notifyListenersStarted();
 		for(int j = 0; j < timePoints_; j++) {
 			long tpStart = System.nanoTime();
 			for(int k = 0; k < numberOfChannels; k++) {
@@ -170,6 +171,7 @@ public class AcqRunner extends Thread {
 		int numberOfChannels = channels_.isEmpty() ? 1 : channels_.size();
 		boolean isshort = core_.getBytesPerPixel() == 2;
 		core_.startSequenceAcquisition(total_, 0.0, true);
+		notifyListenersStarted();
 		for(int j = 0; j < timePoints_; j++) {
 			buffFree_ = core_.getBufferFreeCapacity();
 			if(buffFree_ < numberOfChannels * 10)
@@ -244,6 +246,14 @@ public class AcqRunner extends Thread {
 	private synchronized void notifyListenersComplete() {
 		for(AcqRunnerListener listener : listeners_)
 			listener.notifyWorkCompleted();
+	}
+
+	/**
+	 * Notify event listeners that the acquisition has been started
+	 */
+	private synchronized void notifyListenersStarted() {
+		for(AcqRunnerListener listener : listeners_)
+			listener.notifyWorkStarted();
 	}
 
 	/**
