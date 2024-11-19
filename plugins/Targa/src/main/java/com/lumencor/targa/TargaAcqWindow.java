@@ -476,6 +476,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 
 				Datastore store = mmstudio_.data().createRAMDatastore();
 				DisplayWindow display = mmstudio_.displays().createDisplay(store);
+				display.setCustomTitle(result.getAbsolutePath());
 
 				if(dsmeta != null && !dsmeta.isEmpty()) {
 					try {
@@ -514,6 +515,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 					}
 				}
 				statusInfo_.setText(String.format("Dataset loaded successfully: %d x %d, images %d, type %s", w, h, numImages, type));
+				core_.closeDataset(handle);
 			} catch(Exception ex) {
 				statusInfo_.setText("Dataset load failed. " + ex.getMessage());
 				mmstudio_.getLogManager().logError(ex);
