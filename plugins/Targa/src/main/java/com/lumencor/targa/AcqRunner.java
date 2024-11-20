@@ -227,28 +227,30 @@ public class AcqRunner extends Thread {
 		int numberOfSpecifiedChannels = channels_.size();
 		int numberOfChannels = channels_.isEmpty() ? 1 : numberOfSpecifiedChannels;
 		String currentReadout = core_.getCurrentConfig(READOUT_CONFIG_GROUP);
+
 		if (numberOfSpecifiedChannels == 1) {
+			// if we have only one channel we will set it before starting acquisition
 			core_.setConfig(core_.getChannelGroup(), channels_.get(0));
 			core_.waitForConfig(core_.getChannelGroup(), channels_.get(0));
 		} else if (numberOfSpecifiedChannels > 1) {
-			// if more than one channel we must use standard readout mode
+			// if more than one channel we must use standard readout mode...
 			if (!currentReadout.equals(READOUT_STANDARD_CONFIG))
 				core_.setConfig(READOUT_CONFIG_GROUP, READOUT_STANDARD_CONFIG);
 
-			// set the sequence for the TTL switch device
+			// ...and set the channel sequence for the TTL switch device
 			if (core_.hasProperty(TTL_SWITCH_DEV_NAME, TTL_SWITCH_PROP_SEQUENCE)) {
-				core_.setProperty(TTL_SWITCH_DEV_NAME, TTL_SWITCH_PROP_SEQUENCE, "On");
+
+				// create a string with the sequence of channels
 				StringBuilder sequence = new StringBuilder();
 				for (int i = 0; i < numberOfSpecifiedChannels; i++) {
 					sequence.append(channels_.get(i)).append(" ");
 				}
+
+				// set the "Channel Sequence" property
 				core_.setProperty(TTL_SWITCH_DEV_NAME, TTL_SWITCH_PROP_SEQUENCE, sequence.toString());
 			} else {
 				throw new Exception("Device " + TTL_SWITCH_DEV_NAME + " does not support property " + TTL_SWITCH_PROP_SEQUENCE);
 			}
-
-			// send command for multichannel TTL switching
-			core_.setProperty("TTLSwitch", "Label", "On"); // TODO: this is a placeholder
 		}
 
 		core_.startSequenceAcquisition(total_, 0.0, true);
