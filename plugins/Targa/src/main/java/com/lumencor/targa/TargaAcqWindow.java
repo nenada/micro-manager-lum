@@ -1,6 +1,5 @@
 package org.lumencor.targa;
 
-import clojure.lang.IFn;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
 import mmcorej.CMMCore;
@@ -12,15 +11,13 @@ import javax.swing.event.ListSelectionEvent;
 import java.awt.*;
 import java.awt.event.*;
 import java.io.File;
+import java.io.IOException;
 import java.text.NumberFormat;
 import java.util.Arrays;
 import java.util.Vector;
 import java.util.prefs.Preferences;
 
 import mmcorej.StorageDataType;
-import mmcorej.TaggedImage;
-import mmcorej.org.json.JSONException;
-import mmcorej.org.json.JSONObject;
 import org.micromanager.Studio;
 import org.micromanager.data.*;
 import org.micromanager.data.Image;
@@ -52,6 +49,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	private final JFormattedTextField tbTimeInterval_;
 	private final JCheckBox cbTimeLapse_;
 	private final JButton loadButton_;
+	private final JButton cancelLoadButton_;
 	private final JButton chooseLocationButton_;
 	private final JButton startAcqButton_;
 	private final JButton stopAcqButton_;
@@ -70,6 +68,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	private final JLabel statusInfo_;
 	private final JLabel labelCbuffStatus_;
 	private final JLabel labelCbuffMemory_;
+	private final JLabel labelAcqStoreFps_;
 	private final JProgressBar progressBar_;
 	private final JProgressBar cbuffCapacity_;
 
@@ -80,9 +79,12 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	private String acqName_;
 	private int timePoints_;
 	private int timeIntervalMs_;
+	private double totalStoreTime_;
 	private boolean runnerActive_;
+	private boolean loadActive_;
 	private boolean coreInit_;
 	private AcqRunner worker_;
+	private RewritableDatastore currentAcq_;
 
 	/**
 	 * Class constructor
@@ -90,8 +92,10 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	 */
 	TargaAcqWindow(Studio studio) {
 		super();
+		totalStoreTime_ = 0;
 		coreInit_ = false;
 		runnerActive_ = false;
+		loadActive_ = false;
 		mmstudio_ = studio;
 		core_ = studio.getCMMCore();
 		channels_ = new Vector<>();
@@ -192,6 +196,16 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 		contentPane.add(loadButton_);
 		layout.putConstraint(SpringLayout.EAST, loadButton_, 0, SpringLayout.EAST, tbName_);
 		layout.putConstraint(SpringLayout.NORTH, loadButton_, 10, SpringLayout.SOUTH, tbName_);
+
+		// Add cancel load button
+		cancelLoadButton_ = new JButton("Cancel Loading");
+		cancelLoadButton_.setToolTipText("Cancel Acquisition Loading");
+		cancelLoadButton_.setMargin(new Insets(5, 15, 5, 15));
+		cancelLoadButton_.addActionListener((final ActionEvent e) -> cancelLoadAcquisition());
+		cancelLoadButton_.setVisible(false);
+		contentPane.add(cancelLoadButton_);
+		layout.putConstraint(SpringLayout.EAST, cancelLoadButton_, 0, SpringLayout.EAST, tbName_);
+		layout.putConstraint(SpringLayout.NORTH, cancelLoadButton_, 10, SpringLayout.SOUTH, tbName_);
 
 		// Add timepoints label
 		final JLabel labelTimepoints = new JLabel("Timepoints");
@@ -378,6 +392,13 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 		layout.putConstraint(SpringLayout.EAST, cbuffCapacity_, 200, SpringLayout.EAST, labelCbuffStatus_);
 		layout.putConstraint(SpringLayout.SOUTH, cbuffCapacity_, -8, SpringLayout.NORTH, progressBar_);
 
+		// Add label for storage write frame-rate during acquisition
+		labelAcqStoreFps_ = new JLabel("Storage write frame rate: -");
+		labelAcqStoreFps_.setVisible(false);
+		contentPane.add(labelAcqStoreFps_);
+		layout.putConstraint(SpringLayout.WEST, labelAcqStoreFps_, 0, SpringLayout.WEST, labelCbuffStatus_);
+		layout.putConstraint(SpringLayout.SOUTH, labelAcqStoreFps_, -15, SpringLayout.NORTH, labelCbuffStatus_);
+
 		// Add circular buffer memory footprint label
 		labelCbuffMemory_ = new JLabel("0 MB");
 		labelCbuffMemory_.setVisible(false);
@@ -524,14 +545,28 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	}
 
 	/**
+	 * Cancel acquisition loading
+	 */
+	protected void cancelLoadAcquisition() {
+
+	}
+
+	/**
 	 * Start data acquisition
 	 */
 	protected void startAcquisition() {
 		runnerActive_ = true;
+		totalStoreTime_ = 0;
 		worker_ = new AcqRunner(core_, dataDir_, acqName_, cbTimeLapse_.isSelected(), timePoints_, channels_, timeIntervalMs_);
 		worker_.addListener(this);
 		worker_.start();
+
+		Thread timerThread_ = new Thread(this::updateAcqTime);
+		timerThread_.start();
+
 		statusInfo_.setText("Starting acquisition...");
+		currentAcq_ = mmstudio_.getDataManager().createRewritableRAMDatastore();
+		mmstudio_.getDisplayManager().createDisplay(currentAcq_);
 		updateFormState();
 		updateChannelCommands();
 	}
@@ -559,8 +594,13 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	 */
 	protected void addChannel() {
 		// Obtain channels list
-		//String[] channelSource = core_.getAvailableConfigs("CHANNEL").toArray();
-		String[] channelSource = { "CYAN", "GREEN", "RED", "UV", "TEAL" }; // TODO: Obtain channels from the light engine device adapter
+		String chgrp = core_.getChannelGroup();
+		if(chgrp.isEmpty()) {
+			statusInfo_.setText("Channels configuration is not defined");
+			return;
+		}
+		String[] channelSource = core_.getAvailableConfigs(chgrp).toArray();
+		//String[] channelSource = { "CYAN", "GREEN", "RED", "UV", "TEAL" };
 		Vector<String> allchannels = new Vector<>();
 		for(String s : channelSource) {
 			if(channels_.contains(s))
@@ -664,6 +704,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 		labelCbuffStatus_.setVisible(runnerActive_);
 		cbuffCapacity_.setVisible(runnerActive_);
 		labelCbuffMemory_.setVisible(runnerActive_);
+		labelAcqStoreFps_.setVisible(runnerActive_);
 	}
 
 	/**
@@ -758,6 +799,26 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	}
 
 	/**
+	 * Update acquisition elapsed time
+	 */
+	protected void updateAcqTime() {
+		long startTime = System.nanoTime();
+		while(runnerActive_) {
+			try {
+				long currtime = System.nanoTime();
+				double tottimesec = (currtime - startTime) / 1000000000.0;
+				int thours = (int)Math.floor(tottimesec / 3600.0);
+				int tmins = (int)Math.floor((tottimesec - thours * 3600.0) / 60.0);
+				int tsec = (int)Math.round(tottimesec - thours * 3600.0 - tmins * 60.0);
+				statusInfo_.setText(String.format("Running, elapsed time: %02d:%02d:%02d", tmins, tmins, tsec));
+				Thread.sleep(500);
+			} catch(InterruptedException e) {
+				mmstudio_.getLogManager().logError(e);
+			}
+		}
+	}
+
+	/**
 	 * Acquisition completed event handler
 	 */
 	@Override
@@ -794,9 +855,10 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	 * @param image Current image handle
 	 * @param bufffree Circular buffer free capacity
 	 * @param bufftotal Circular buffer total capacity
+	 * @param storetimems Storage write time (in ms)
 	 */
 	@Override
-	public void notifyStatusUpdate(int curr, int total, Image image, int bufffree, int bufftotal) {
+	public void notifyStatusUpdate(int curr, int total, Image image, int bufffree, int bufftotal, double storetimems) {
 		int perc = (int)Math.ceil(100.0 * (double)curr / total);
 		progressBar_.setMaximum(total);
 		progressBar_.setValue(curr);
@@ -812,7 +874,20 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 			labelCbuffMemory_.setText(String.format("%.2f GB", cbuffmb / 1024.0));
 		else
 			labelCbuffMemory_.setText(String.format("%.1f MB", cbuffmb));
-		statusInfo_.setText(String.format("Running: %d / %d", curr, total));
+		//statusInfo_.setText(String.format("Running: %d / %d", curr, total));
+
+		// Calculate storage driver statistics
+		totalStoreTime_ += storetimems;
+		double avgtime = curr == 0 ? 0 : totalStoreTime_ / curr;
+		double avgfps = avgtime == 0 ? 0 : 1000.0 / avgtime;
+		labelAcqStoreFps_.setText(String.format("Storage write frame rate: %.1f FPS", avgfps));
+
+		// Update current image
+		try {
+			currentAcq_.putImage(image);
+		} catch(IOException e) {
+			mmstudio_.getLogManager().logError(e);
+		}
 	}
 
 	/**
