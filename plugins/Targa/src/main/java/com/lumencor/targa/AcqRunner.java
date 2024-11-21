@@ -4,7 +4,6 @@ import mmcorej.CMMCore;
 import mmcorej.LongVector;
 import mmcorej.StorageDataType;
 import mmcorej.TaggedImage;
-import mmcorej.org.json.JSONException;
 import org.micromanager.data.Image;
 import org.micromanager.data.internal.DefaultImage;
 
@@ -62,7 +61,8 @@ public class AcqRunner extends Thread {
 	/**
 	 * Thread body
 	 */
-	@Override public void run() {
+	@Override
+	public void run() {
 		active_ = true;
 		current_ = 0;
 		total_ = (channels_.isEmpty() ? 1 : channels_.size()) * timePoints_;
@@ -99,7 +99,7 @@ public class AcqRunner extends Thread {
 					runTimeLapse(handle, pixType);
 				else
 					runAcquisition(handle, pixType);
-			} catch(Exception ex) {
+			} catch(Exception | Error ex) {
 				core_.stopSequenceAcquisition();
 				error = ex.getMessage();
 			}
@@ -120,9 +120,10 @@ public class AcqRunner extends Thread {
 				notifyListenersComplete();
 			else
 				notifyListenersFail(error);
-		} catch(Exception e) {
+		} catch(Exception | Error e) {
 			notifyListenersFail(e.getMessage());
 		}
+		active_ = false;
 	}
 
 	/**
@@ -317,7 +318,7 @@ public class AcqRunner extends Thread {
 	 */
 	private synchronized void notifyListenersComplete() {
 		for(AcqRunnerListener listener : listeners_)
-			listener.notifyWorkCompleted();
+			listener.notifyAcqCompleted();
 	}
 
 	/**
@@ -325,7 +326,7 @@ public class AcqRunner extends Thread {
 	 */
 	private synchronized void notifyListenersStarted() {
 		for(AcqRunnerListener listener : listeners_)
-			listener.notifyWorkStarted();
+			listener.notifyAcqStarted();
 	}
 
 	/**
@@ -334,7 +335,7 @@ public class AcqRunner extends Thread {
 	 */
 	private synchronized void notifyListenersFail(String msg) {
 		for(AcqRunnerListener listener : listeners_)
-			listener.notifyWorkFailed(msg);
+			listener.notifyAcqFailed(msg);
 	}
 
 	/**
@@ -344,6 +345,6 @@ public class AcqRunner extends Thread {
 	 */
 	private synchronized void notifyListenersStatusUpdate(Image img, double storetimems) {
 		for(AcqRunnerListener listener : listeners_)
-			listener.notifyStatusUpdate(current_, total_, img, buffFree_, buffTotal_, storetimems);
+			listener.notifyAcqStatusUpdate(current_, total_, img, buffFree_, buffTotal_, storetimems);
 	}
 }

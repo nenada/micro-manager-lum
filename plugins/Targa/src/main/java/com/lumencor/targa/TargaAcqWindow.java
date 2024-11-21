@@ -17,23 +17,18 @@ import java.util.Arrays;
 import java.util.Vector;
 import java.util.prefs.Preferences;
 
-import mmcorej.StorageDataType;
 import org.micromanager.Studio;
 import org.micromanager.data.*;
 import org.micromanager.data.Image;
-import org.micromanager.data.internal.DefaultImage;
-import org.micromanager.data.internal.DefaultMetadata;
-import org.micromanager.data.internal.DefaultSummaryMetadata;
 import org.micromanager.display.DisplayWindow;
 import org.micromanager.internal.MMStudio;
-import org.micromanager.internal.propertymap.NonPropertyMapJSONFormats;
 import org.micromanager.internal.utils.FileDialogs;
 
 /**
  * Targa acquisition plugin main window
  * @author Milos Jovanovic <milos@tehnocad.rs>
  */
-public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
+public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRunnerListener {
 	private final static String CFG_LOCATION = "DataDir";
 	private final static String CFG_NAME = "NAME";
 	private final static String CFG_TIMEPOINTS = "TimePoints";
@@ -83,8 +78,10 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	private boolean runnerActive_;
 	private boolean loadActive_;
 	private boolean coreInit_;
-	private AcqRunner worker_;
+	private AcqRunner acqWorker_;
+	private LoadRunner loadWorker_;
 	private RewritableDatastore currentAcq_;
+	private Datastore loadedDatastore_;
 
 	/**
 	 * Class constructor
@@ -477,78 +474,36 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 		File result = FileDialogs.openFile(this, "Please choose a valid dataset", FileDialogs.MM_DATA_SET);
 		if(result == null)
 			return;
+
+		loadActive_ = true;
+		loadWorker_ = new LoadRunner(mmstudio_, result.getAbsolutePath());
+		loadWorker_.addListener(this);
+		loadWorker_.start();
+
 		statusInfo_.setText(String.format("Loading file: %s...", result.getAbsolutePath()));
-		SwingUtilities.invokeLater(() -> {
-			try {
-				String handle = core_.loadDataset(result.getAbsolutePath());
-				mmcorej.LongVector shape = core_.getDatasetShape(handle);
-				mmcorej.StorageDataType type = core_.getDatasetPixelType(handle);
-				if(shape == null || type == null || shape.size() != 5) {
-					statusInfo_.setText("Dataset load failed. Selected file is not a valid dataset");
-					return;
-				}
-				String dsmeta = core_.getSummaryMeta(handle);
-				int w = shape.get((int)shape.size() - 1);
-				int h = shape.get((int)shape.size() - 2);
-				int bpp = type == StorageDataType.StorageDataType_GRAY16 ? 2 : 1;
-				int numImages = 1;
-				for(int i = 0; i < shape.size() - 2; i++)
-					numImages *= shape.get(i);
-
-				Datastore store = mmstudio_.data().createRAMDatastore();
-				DisplayWindow display = mmstudio_.displays().createDisplay(store);
-				display.setCustomTitle(result.getAbsolutePath());
-
-				if(dsmeta != null && !dsmeta.isEmpty()) {
-					try {
-						JsonElement je = new JsonParser().parse(dsmeta);
-						SummaryMetadata smeta = DefaultSummaryMetadata.fromPropertyMap(NonPropertyMapJSONFormats.metadata().fromGson(je));
-						store.setSummaryMetadata(smeta);
-					} catch(Exception e) {
-						mmstudio_.getLogManager().logError(e);
-					}
-				}
-				for(int i = 0; i < shape.get(0); i++) {
-					for(int j = 0; j < shape.get(1); j++) {
-						for(int k = 0; k < shape.get(2); k++) {
-							mmcorej.LongVector coords = new mmcorej.LongVector();
-							coords.add(i);
-							coords.add(j);
-							coords.add(k);
-							Object pixdata = core_.getImage(handle, coords);
-							if(pixdata == null)
-								continue;
-							Metadata meta = null;
-							String metastr = core_.getImageMeta(handle, coords);
-							if(metastr != null && !metastr.isEmpty()) {
-								try {
-									JsonElement je = new JsonParser().parse(metastr);
-									meta = DefaultMetadata.fromPropertyMap(NonPropertyMapJSONFormats.metadata().fromGson(je));
-								} catch(Exception e) {
-									mmstudio_.getLogManager().logError(e);
-								}
-							}
-							Coords.CoordsBuilder builder = mmstudio_.data().coordsBuilder();
-							builder.time(j).channel(k);
-							Image img = new DefaultImage(pixdata, w, h, bpp, 1, builder.build(), meta);
-							store.putImage(img);
-						}
-					}
-				}
-				statusInfo_.setText(String.format("Dataset loaded successfully: %d x %d, images %d, type %s", w, h, numImages, type));
-				core_.closeDataset(handle);
-			} catch(Exception ex) {
-				statusInfo_.setText("Dataset load failed. " + ex.getMessage());
-				mmstudio_.getLogManager().logError(ex);
-			}
-		});
+		loadedDatastore_ = mmstudio_.data().createRAMDatastore();
+		DisplayWindow display = mmstudio_.displays().createDisplay(loadedDatastore_);
+		display.setCustomTitle(result.getAbsolutePath());
+		updateFormState();
+		updateChannelCommands();
 	}
 
 	/**
-	 * Cancel acquisition loading
+	 * Cancel dataset loading
 	 */
 	protected void cancelLoadAcquisition() {
-
+		loadActive_ = false;
+		loadWorker_.cancel();
+		try {
+			if(loadWorker_.isAlive())
+				loadWorker_.join();
+		}catch(InterruptedException e) {
+			mmstudio_.getLogManager().logError(e);
+		}
+		loadWorker_ = null;
+		statusInfo_.setText("Loading cancelled by the user");
+		updateFormState();
+		updateChannelCommands();
 	}
 
 	/**
@@ -557,9 +512,9 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	protected void startAcquisition() {
 		runnerActive_ = true;
 		totalStoreTime_ = 0;
-		worker_ = new AcqRunner(core_, dataDir_, acqName_, cbTimeLapse_.isSelected(), timePoints_, channels_, timeIntervalMs_);
-		worker_.addListener(this);
-		worker_.start();
+		acqWorker_ = new AcqRunner(core_, dataDir_, acqName_, cbTimeLapse_.isSelected(), timePoints_, channels_, timeIntervalMs_);
+		acqWorker_.addListener(this);
+		acqWorker_.start();
 
 		Thread timerThread_ = new Thread(this::updateAcqTime);
 		timerThread_.start();
@@ -576,14 +531,14 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	 */
 	protected void stopAcquisition() {
 		runnerActive_ = false;
-		worker_.cancel();
+		acqWorker_.cancel();
 		try {
-			if(worker_.isAlive())
-				worker_.join();
+			if(acqWorker_.isAlive())
+				acqWorker_.join();
 		}catch(InterruptedException e) {
 			mmstudio_.getLogManager().logError(e);
 		}
-		worker_ = null;
+		acqWorker_ = null;
 		statusInfo_.setText("Acquisition stopped by the user");
 		updateFormState();
 		updateChannelCommands();
@@ -680,10 +635,10 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	 */
 	protected void updateChannelCommands() {
 		int ind = listChannels_.getSelectedIndex();
-		channelAddButton_.setEnabled(!runnerActive_);
-		channelRemoveButton_.setEnabled(!runnerActive_ && listChannels_.getSelectedIndex() >= 0 && !channels_.isEmpty());
-		channelUpButton_.setEnabled(!runnerActive_ && listChannels_.getSelectedIndex() > 0 && !channels_.isEmpty());
-		channelDownButton_.setEnabled(!runnerActive_ && listChannels_.getSelectedIndex() >= 0 && listChannels_.getSelectedIndex() < channels_.size() - 1);
+		channelAddButton_.setEnabled(!runnerActive_ && !loadActive_);
+		channelRemoveButton_.setEnabled(!runnerActive_ && !loadActive_ && listChannels_.getSelectedIndex() >= 0 && !channels_.isEmpty());
+		channelUpButton_.setEnabled(!runnerActive_ && !loadActive_ && listChannels_.getSelectedIndex() > 0 && !channels_.isEmpty());
+		channelDownButton_.setEnabled(!runnerActive_ && !loadActive_ && listChannels_.getSelectedIndex() >= 0 && listChannels_.getSelectedIndex() < channels_.size() - 1);
 	}
 
 	/**
@@ -691,16 +646,19 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	 */
 	protected void updateFormState() {
 		startAcqButton_.setVisible(!runnerActive_);
+		startAcqButton_.setEnabled(!loadActive_);
 		stopAcqButton_.setVisible(runnerActive_);
 		progressBar_.setVisible(runnerActive_);
-		tbTimePoints_.setEnabled(!runnerActive_);
-		tbTimeInterval_.setEnabled(!runnerActive_ && cbTimeLapse_.isSelected());
-		cbTimeLapse_.setEnabled(!runnerActive_);
-		tbLocation_.setEnabled(!runnerActive_);
-		tbName_.setEnabled(!runnerActive_);
+		tbTimePoints_.setEnabled(!runnerActive_ && !loadActive_);
+		tbTimeInterval_.setEnabled(!runnerActive_&& !loadActive_ && cbTimeLapse_.isSelected());
+		cbTimeLapse_.setEnabled(!runnerActive_&& !loadActive_);
+		tbLocation_.setEnabled(!runnerActive_&& !loadActive_);
+		tbName_.setEnabled(!runnerActive_&& !loadActive_);
+		loadButton_.setVisible(!loadActive_);
 		loadButton_.setEnabled(!runnerActive_);
-		chooseLocationButton_.setEnabled(!runnerActive_);
-		listChannels_.setEnabled(!runnerActive_);
+		cancelLoadButton_.setVisible(loadActive_);
+		chooseLocationButton_.setEnabled(!runnerActive_&& !loadActive_);
+		listChannels_.setEnabled(!runnerActive_&& !loadActive_);
 		labelCbuffStatus_.setVisible(runnerActive_);
 		cbuffCapacity_.setVisible(runnerActive_);
 		labelCbuffMemory_.setVisible(runnerActive_);
@@ -822,7 +780,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	 * Acquisition completed event handler
 	 */
 	@Override
-	public void notifyWorkCompleted() {
+	public void notifyAcqCompleted() {
 		runnerActive_ = false;
 		statusInfo_.setText("Acquisition completed successfully");
 		updateFormState();
@@ -833,7 +791,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	 * Acquisition started event handler
 	 */
 	@Override
-	public void notifyWorkStarted() {
+	public void notifyAcqStarted() {
 	}
 
 	/**
@@ -841,7 +799,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	 * @param msg Error message
 	 */
 	@Override
-	public void notifyWorkFailed(String msg) {
+	public void notifyAcqFailed(String msg) {
 		runnerActive_ = false;
 		statusInfo_.setText("ERROR: " + msg);
 		updateFormState();
@@ -858,7 +816,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 	 * @param storetimems Storage write time (in ms)
 	 */
 	@Override
-	public void notifyStatusUpdate(int curr, int total, Image image, int bufffree, int bufftotal, double storetimems) {
+	public void notifyAcqStatusUpdate(int curr, int total, Image image, int bufffree, int bufftotal, double storetimems) {
 		int perc = (int)Math.ceil(100.0 * (double)curr / total);
 		progressBar_.setMaximum(total);
 		progressBar_.setValue(curr);
@@ -885,6 +843,58 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener {
 		// Update current image
 		try {
 			currentAcq_.putImage(image);
+		} catch(IOException e) {
+			mmstudio_.getLogManager().logError(e);
+		}
+	}
+
+	/**
+	 * Dataset loading completed event handler
+	 * @param w Image width
+	 * @param h Image height
+	 * @param imgcnt Number of images
+	 * @param type Pixel data type
+	 */
+	@Override
+	public void notifyLoadCompleted(int w, int h, int imgcnt, mmcorej.StorageDataType type) {
+		loadActive_ = false;
+		statusInfo_.setText(String.format("Dataset loaded successfully: %d x %d, images %d, type %s", w, h, imgcnt, type));
+		updateFormState();
+		updateChannelCommands();
+	}
+
+	/**
+	 * Dataset loading failed event handler
+	 * @param msg Error message
+	 */
+	@Override
+	public void notifyLoadFailed(String msg) {
+		loadActive_ = false;
+		statusInfo_.setText("Dataset load failed. " + msg);
+		updateFormState();
+		updateChannelCommands();
+	}
+
+	/**
+	 * Dataset loading image loaded event handler
+	 * @param img Image handle
+	 */
+	@Override
+	public void notifyLoadImage(Image img) {
+		try {
+			loadedDatastore_.putImage(img);
+		} catch(IOException e) {
+			mmstudio_.getLogManager().logError(e);
+		}
+	}
+
+	/**
+	 * Dataset loading summary metadata loaded event handler
+	 * @param meta Metadata
+	 */
+	public void notifyLoadSummaryMetadata(SummaryMetadata meta) {
+		try {
+			loadedDatastore_.setSummaryMetadata(meta);
 		} catch(IOException e) {
 			mmstudio_.getLogManager().logError(e);
 		}
