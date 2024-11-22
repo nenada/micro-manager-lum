@@ -1,7 +1,5 @@
 package org.lumencor.targa;
 
-import com.google.gson.JsonElement;
-import com.google.gson.JsonParser;
 import mmcorej.CMMCore;
 
 import javax.swing.*;
@@ -520,10 +518,20 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		timerThread_.start();
 
 		statusInfo_.setText("Starting acquisition...");
-		currentAcq_ = mmstudio_.getDataManager().createRewritableRAMDatastore();
-		mmstudio_.getDisplayManager().createDisplay(currentAcq_);
 		updateFormState();
 		updateChannelCommands();
+
+		// Show image view
+		if(currentAcq_ != null) {
+			try {
+				currentAcq_.deleteAllImages();
+			} catch(IOException e) {
+				mmstudio_.getLogManager().logError(e);
+			}
+		} else
+			currentAcq_ = mmstudio_.getDataManager().createRewritableRAMDatastore();
+		if(mmstudio_.getDisplayManager().getActiveDataViewer() == null)
+			mmstudio_.getDisplayManager().createDisplay(currentAcq_);
 	}
 
 	/**
