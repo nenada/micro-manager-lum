@@ -568,7 +568,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	protected void startAcquisition() {
 		runnerActive_ = true;
 		totalStoreTime_ = 0;
-		acqWorker_ = new AcqRunner(core_, dataDir_, acqName_, cbTimeLapse_.isSelected(), timePoints_, channels_, timeIntervalMs_);
+		acqWorker_ = new AcqRunner(core_, dataDir_, acqName_, cbTimeLapse_.isSelected(), timePoints_, channels_, timeIntervalMs_, chunkSize_, cbDirectIo_.isSelected(), flushCycle_);
 		acqWorker_.addListener(this);
 		acqWorker_.start();
 
