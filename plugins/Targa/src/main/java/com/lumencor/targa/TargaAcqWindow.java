@@ -32,6 +32,9 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	private final static String CFG_TIMEPOINTS = "TimePoints";
 	private final static String CFG_TIMELAPSE = "TimeLapse";
 	private final static String CFG_TIMEINTERVAL = "TimeInterval";
+	private final static String CFG_CHUNKSIZE = "ChunkSize";
+	private final static String CFG_FLUSHCYCLE = "FlushCycle";
+	private final static String CFG_DIRECTIO = "DirectIO";
 	private final static String CFG_CHANNELS = "Channels";
 	private final static String CFG_WNDX = "WndX";
 	private final static String CFG_WNDY = "WndY";
@@ -39,8 +42,11 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	private final JTextField tbLocation_;
 	private final JTextField tbName_;
 	private final JSpinner tbTimePoints_;
+	private final JSpinner tbChunkSize_;
+	private final JSpinner tbFlushCycle_;
 	private final JFormattedTextField tbTimeInterval_;
 	private final JCheckBox cbTimeLapse_;
+	private final JCheckBox cbDirectIo_;
 	private final JButton loadButton_;
 	private final JButton cancelLoadButton_;
 	private final JButton chooseLocationButton_;
@@ -72,6 +78,8 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	private String acqName_;
 	private int timePoints_;
 	private int timeIntervalMs_;
+	private int flushCycle_;
+	private int chunkSize_;
 	private double totalStoreTime_;
 	private boolean runnerActive_;
 	private boolean loadActive_;
@@ -88,6 +96,8 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	TargaAcqWindow(Studio studio) {
 		super();
 		totalStoreTime_ = 0;
+		flushCycle_ = 0;
+		chunkSize_ = 0;
 		coreInit_ = false;
 		runnerActive_ = false;
 		loadActive_ = false;
@@ -105,8 +115,8 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		super.setTitle("Targa Acquisition " + TargaPlugin.VERSION_INFO);
 		super.setIconImage(Toolkit.getDefaultToolkit().getImage(getClass().getResource("/org/micromanager/icons/microscope.gif")));
 		super.setResizable(false);
-		super.setPreferredSize(new Dimension(800, 530));
-		super.setBounds(400, 200, 800, 530);
+		super.setPreferredSize(new Dimension(800, 560));
+		super.setBounds(400, 200, 800, 560);
 		super.pack();
 
 		// Set layout manager
@@ -202,11 +212,50 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		layout.putConstraint(SpringLayout.EAST, cancelLoadButton_, 0, SpringLayout.EAST, tbName_);
 		layout.putConstraint(SpringLayout.NORTH, cancelLoadButton_, 10, SpringLayout.SOUTH, tbName_);
 
+		// === FIRST ROW ========================================
+		// Add chunk size label
+		final JLabel labelChunkSize = new JLabel("Chunk size");
+		contentPane.add(labelChunkSize);
+		layout.putConstraint(SpringLayout.WEST, labelChunkSize, 20, SpringLayout.WEST, contentPane);
+		layout.putConstraint(SpringLayout.NORTH, labelChunkSize, 142, SpringLayout.NORTH, contentPane);
+
+		// Add chunk size text box
+		tbChunkSize_ = new JSpinner(new SpinnerNumberModel(0, 0, null, 1));
+		tbChunkSize_.addChangeListener((ChangeEvent e) -> applySettingsFromUI());
+		contentPane.add(tbChunkSize_);
+		layout.putConstraint(SpringLayout.WEST, tbChunkSize_, 0, SpringLayout.WEST, tbLocation_);
+		layout.putConstraint(SpringLayout.EAST, tbChunkSize_, 80, SpringLayout.WEST, tbChunkSize_);
+		layout.putConstraint(SpringLayout.NORTH, tbChunkSize_, -2, SpringLayout.NORTH, labelChunkSize);
+
+		// Add Direct I/O check box
+		cbDirectIo_ = new JCheckBox("Direct I/O");
+		cbDirectIo_.setHorizontalTextPosition(SwingConstants.LEADING);
+		cbDirectIo_.setHorizontalAlignment(SwingConstants.RIGHT);
+		contentPane.add(cbDirectIo_);
+		layout.putConstraint(SpringLayout.WEST, cbDirectIo_, 20, SpringLayout.EAST, tbChunkSize_);
+		layout.putConstraint(SpringLayout.EAST, cbDirectIo_, 150, SpringLayout.WEST, cbDirectIo_);
+		layout.putConstraint(SpringLayout.NORTH, cbDirectIo_, -3, SpringLayout.NORTH, labelChunkSize);
+
+		// Add flush cycle label
+		final JLabel labelFlushCycle = new JLabel("Flush Cycle");
+		contentPane.add(labelFlushCycle);
+		layout.putConstraint(SpringLayout.WEST, labelFlushCycle, 100, SpringLayout.EAST, cbDirectIo_);
+		layout.putConstraint(SpringLayout.NORTH, labelFlushCycle, 0, SpringLayout.NORTH, labelChunkSize);
+
+		// Add flush cycle text box
+		tbFlushCycle_ = new JSpinner(new SpinnerNumberModel(0, 0, null, 1));
+		tbFlushCycle_.addChangeListener((ChangeEvent e) -> applySettingsFromUI());
+		contentPane.add(tbFlushCycle_);
+		layout.putConstraint(SpringLayout.EAST, tbFlushCycle_, 0, SpringLayout.EAST, loadButton_);
+		layout.putConstraint(SpringLayout.WEST, tbFlushCycle_, -80, SpringLayout.EAST, tbFlushCycle_);
+		layout.putConstraint(SpringLayout.NORTH, tbFlushCycle_, -2, SpringLayout.NORTH, labelChunkSize);
+
+		// === SECOND ROW ========================================
 		// Add timepoints label
 		final JLabel labelTimepoints = new JLabel("Timepoints");
 		contentPane.add(labelTimepoints);
 		layout.putConstraint(SpringLayout.WEST, labelTimepoints, 20, SpringLayout.WEST, contentPane);
-		layout.putConstraint(SpringLayout.NORTH, labelTimepoints, 142, SpringLayout.NORTH, contentPane);
+		layout.putConstraint(SpringLayout.NORTH, labelTimepoints, 20, SpringLayout.SOUTH, labelChunkSize);
 
 		// Add timepoints count text box
 		tbTimePoints_ = new JSpinner(new SpinnerNumberModel(5, 1, null, 1));
@@ -219,22 +268,24 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		// Add time lapse check box
 		cbTimeLapse_ = new JCheckBox("Time Lapse");
 		cbTimeLapse_.setHorizontalTextPosition(SwingConstants.LEADING);
+		cbTimeLapse_.setHorizontalAlignment(SwingConstants.RIGHT);
 		cbTimeLapse_.addActionListener((ActionEvent e) -> updateTimeLapseOptions());
-		layout.putConstraint(SpringLayout.WEST, cbTimeLapse_, 50, SpringLayout.EAST, tbTimePoints_);
+		layout.putConstraint(SpringLayout.WEST, cbTimeLapse_, 0, SpringLayout.WEST, cbDirectIo_);
+		layout.putConstraint(SpringLayout.EAST, cbTimeLapse_, 0, SpringLayout.EAST, cbDirectIo_);
 		layout.putConstraint(SpringLayout.NORTH, cbTimeLapse_, -3, SpringLayout.NORTH, labelTimepoints);
 		contentPane.add(cbTimeLapse_);
 
 		// Add time interval label
 		final JLabel labelTimeInterval = new JLabel("Interval [ms]");
 		contentPane.add(labelTimeInterval);
-		layout.putConstraint(SpringLayout.WEST, labelTimeInterval, 50, SpringLayout.EAST, cbTimeLapse_);
+		layout.putConstraint(SpringLayout.WEST, labelTimeInterval, 0, SpringLayout.WEST, labelFlushCycle);
 		layout.putConstraint(SpringLayout.NORTH, labelTimeInterval, 0, SpringLayout.NORTH, labelTimepoints);
 
 		// Add time interval text box
 		tbTimeInterval_ = new JFormattedTextField(integerFieldFormatter);
 		tbTimeInterval_.addFocusListener(focusListener);
 		contentPane.add(tbTimeInterval_);
-		layout.putConstraint(SpringLayout.WEST, tbTimeInterval_, 10, SpringLayout.EAST, labelTimeInterval);
+		layout.putConstraint(SpringLayout.WEST, tbTimeInterval_, 0, SpringLayout.WEST, tbFlushCycle_);
 		layout.putConstraint(SpringLayout.EAST, tbTimeInterval_, 80, SpringLayout.WEST, tbTimeInterval_);
 		layout.putConstraint(SpringLayout.NORTH, tbTimeInterval_, 0, SpringLayout.NORTH, tbTimePoints_);
 
@@ -428,6 +479,9 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		prefs.putInt(CFG_TIMEPOINTS, timePoints_);
 		prefs.putBoolean(CFG_TIMELAPSE, cbTimeLapse_.isSelected());
 		prefs.putInt(CFG_TIMEINTERVAL, timeIntervalMs_);
+		prefs.putInt(CFG_CHUNKSIZE, chunkSize_);
+		prefs.putInt(CFG_FLUSHCYCLE, flushCycle_);
+		prefs.putBoolean(CFG_DIRECTIO, cbDirectIo_.isSelected());
 		prefs.put(CFG_CHANNELS, chlist.toString());
 		prefs.putInt(CFG_WNDX, super.getBounds().x);
 		prefs.putInt(CFG_WNDY, super.getBounds().y);
@@ -446,7 +500,10 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		acqName_ = prefs.get(CFG_NAME, "");
 		timePoints_ = prefs.getInt(CFG_TIMEPOINTS, 1);
 		timeIntervalMs_ = prefs.getInt(CFG_TIMEINTERVAL, 100);
+		chunkSize_ = prefs.getInt(CFG_CHUNKSIZE, 0);
+		flushCycle_ = prefs.getInt(CFG_FLUSHCYCLE, 0);
 		boolean tl = prefs.getBoolean(CFG_TIMELAPSE, false);
+		boolean dio = prefs.getBoolean(CFG_DIRECTIO, false);
 		int wndx = prefs.getInt(CFG_WNDX, super.getBounds().x);
 		int wndy = prefs.getInt(CFG_WNDY, super.getBounds().y);
 		String chlist = prefs.get(CFG_CHANNELS, "");
@@ -459,6 +516,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		tbName_.setText(acqName_);
 		tbTimePoints_.setValue(timePoints_);
 		cbTimeLapse_.setSelected(tl);
+		cbDirectIo_.setSelected(dio);
 		tbTimeInterval_.setValue(timeIntervalMs_);
 		tbTimeInterval_.setEnabled(tl);
 		listChannels_.setListData(channels_);
@@ -657,6 +715,9 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		startAcqButton_.setEnabled(!loadActive_);
 		stopAcqButton_.setVisible(runnerActive_);
 		progressBar_.setVisible(runnerActive_);
+		tbChunkSize_.setEnabled(!runnerActive_ && !loadActive_);
+		tbFlushCycle_.setEnabled(!runnerActive_ && !loadActive_);
+		cbDirectIo_.setEnabled(!runnerActive_ && !loadActive_);
 		tbTimePoints_.setEnabled(!runnerActive_ && !loadActive_);
 		tbTimeInterval_.setEnabled(!runnerActive_&& !loadActive_ && cbTimeLapse_.isSelected());
 		cbTimeLapse_.setEnabled(!runnerActive_&& !loadActive_);
@@ -688,6 +749,16 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 			timeIntervalMs_ = Integer.parseInt(tbTimeInterval_.getText());
 		} catch(NumberFormatException e) {
 			tbTimeInterval_.setValue(timeIntervalMs_);
+		}
+		try {
+			flushCycle_ = (int)tbFlushCycle_.getValue();
+		} catch(NumberFormatException e) {
+			tbFlushCycle_.setValue(flushCycle_);
+		}
+		try {
+			chunkSize_ = (int)tbChunkSize_.getValue();
+		} catch(NumberFormatException e) {
+			tbChunkSize_.setValue(chunkSize_);
 		}
 		updateAcqInfo();
 	}
