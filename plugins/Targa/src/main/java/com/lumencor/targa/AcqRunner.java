@@ -12,6 +12,13 @@ import java.util.Vector;
 import java.util.concurrent.CopyOnWriteArraySet;
 
 public class AcqRunner extends Thread {
+	// Readout configuration must match the configuration in Micro-manager
+	private static final String READOUT_CONFIG_GROUP = "Readout";
+	private static final String READOUT_STANDARD_CONFIG = "Standard";
+	private static final String READOUT_FAST_CONFIG = "Fast";
+	private static final String TTL_SWITCH_DEV_NAME = "TTLSwitch";
+	private static final String TTL_SWITCH_PROP_SEQUENCE = "ChannelSequence";
+
 	private final Set<AcqRunnerListener> listeners_ = new CopyOnWriteArraySet<>();
 	private final CMMCore core_;
 	private final String location_;
@@ -26,12 +33,6 @@ public class AcqRunner extends Thread {
 	private int total_;
 	private int buffFree_;
 	private int buffTotal_;
-	// Readout configuration must match the configuration in Micro-manager
-	private final String READOUT_CONFIG_GROUP = "Readout";
-	private final String READOUT_STANDARD_CONFIG = "Standard";
-	private final String READOUT_FAST_CONFIG = "Fast";
-	private final String TTL_SWITCH_DEV_NAME = "TTLSwitch";
-	private final String TTL_SWITCH_PROP_SEQUENCE = "ChannelSequence";
 
 	/**
 	 * Class constructor
@@ -60,7 +61,8 @@ public class AcqRunner extends Thread {
 	/**
 	 * Thread body
 	 */
-	@Override public void run() {
+	@Override
+	public void run() {
 		active_ = true;
 		current_ = 0;
 		total_ = (channels_.isEmpty() ? 1 : channels_.size()) * timePoints_;
@@ -77,22 +79,16 @@ public class AcqRunner extends Thread {
 			shape.add(channels_.isEmpty() ? 1 : channels_.size());
 			shape.add((int)core_.getImageWidth());
 			shape.add((int)core_.getImageHeight());
-			long bytesPerPixel = core_.getBytesPerPixel();
-			StorageDataType pixType = StorageDataType.StorageDataType_UNKNOWN;
-			if (bytesPerPixel == 2)
-				pixType = StorageDataType.StorageDataType_GRAY16;
-			else if (bytesPerPixel == 1)
-				pixType = StorageDataType.StorageDataType_GRAY8;
-			else
-				throw new Exception("Unsupported pixel depth of " + bytesPerPixel + " bytes.");
+			long bpp = core_.getBytesPerPixel();
+			StorageDataType pixType = bpp == 2 ? StorageDataType.StorageDataType_GRAY16 : (bpp == 1 ? StorageDataType.StorageDataType_GRAY8 : StorageDataType.StorageDataType_UNKNOWN);
+			if(pixType == StorageDataType.StorageDataType_UNKNOWN)
+				throw new Exception("Unsupported pixel depth of " + bpp + " bytes.");
 			String handle = core_.createDataset(location_, name_, shape, pixType, "");
 
 			// save the initial state
 			double exposureMs = core_.getExposure();
 			String chGroup = core_.getChannelGroup();
-			String currentChannel = "";
-			if (!chGroup.isEmpty())
-				currentChannel = core_.getCurrentConfig(chGroup);
+			String currentChannel = chGroup.isEmpty() ? "" : core_.getCurrentConfig(chGroup);
 			String readoutMode = core_.getCurrentConfig(READOUT_CONFIG_GROUP);
 
 			// Acquire images
@@ -103,7 +99,7 @@ public class AcqRunner extends Thread {
 					runTimeLapse(handle, pixType);
 				else
 					runAcquisition(handle, pixType);
-			} catch(Exception ex) {
+			} catch(Exception | Error ex) {
 				core_.stopSequenceAcquisition();
 				error = ex.getMessage();
 			}
@@ -112,11 +108,11 @@ public class AcqRunner extends Thread {
 			core_.closeDataset(handle);
 
 			// restore the initial state
-			if (!currentChannel.isEmpty())
+			if(!currentChannel.isEmpty())
 				core_.setConfig(chGroup, currentChannel);
-			if (core_.getExposure() != exposureMs)
+			if(core_.getExposure() != exposureMs)
 				core_.setExposure(exposureMs);
-			if (!readoutMode.equals(core_.getCurrentConfig(READOUT_CONFIG_GROUP)))
+			if(!readoutMode.equals(core_.getCurrentConfig(READOUT_CONFIG_GROUP)))
 				core_.setConfig(READOUT_CONFIG_GROUP, readoutMode);
 
 			// Notify that the acquisition is complete
@@ -124,9 +120,10 @@ public class AcqRunner extends Thread {
 				notifyListenersComplete();
 			else
 				notifyListenersFail(error);
-		} catch(Exception e) {
+		} catch(Exception | Error e) {
 			notifyListenersFail(e.getMessage());
 		}
+		active_ = false;
 	}
 
 	/**
@@ -159,10 +156,10 @@ public class AcqRunner extends Thread {
 		// setup appropriate readout mode
 		// timelapse requires standard readout mode
 		String currentConfig = core_.getCurrentConfig(READOUT_CONFIG_GROUP);
-		if (!currentConfig.equals(READOUT_STANDARD_CONFIG))
+		if(!currentConfig.equals(READOUT_STANDARD_CONFIG))
 			core_.setConfig(READOUT_CONFIG_GROUP, READOUT_STANDARD_CONFIG);
 
-        notifyListenersStarted();
+      notifyListenersStarted();
 		for(int j = 0; j < timePoints_; j++) {
 			long tpStart = System.nanoTime();
 			for(int k = 0; k < numberOfChannels; k++) {
@@ -172,7 +169,7 @@ public class AcqRunner extends Thread {
 						break;
 				}
 				// switch to the next channel if we have more than one
-				if (numberOfSpecifiedChannels > 1) {
+				if(numberOfSpecifiedChannels > 1) {
 					core_.setConfig(core_.getChannelGroup(), channels_.get(k));
 					core_.waitForConfig(core_.getChannelGroup(), channels_.get(k));
 				}
@@ -180,33 +177,7 @@ public class AcqRunner extends Thread {
 				core_.snapImage();
 				buffFree_ = core_.getBufferFreeCapacity();
 				TaggedImage img = core_.getTaggedImage();
-
-				// create coordinates for the image
-				LongVector coords = new LongVector();
-				coords.add(0);
-				coords.add(j);
-				coords.add(k);
-				coords.add(0);
-				coords.add(0);
-
-				// Add image index to the image metadata
-				img.tags.put("Image-index", current_);
-
-				// Add image to stream
-				if (pixType == StorageDataType.StorageDataType_GRAY16) {
-					// ware assuming t
-					short[] bx = (short[])img.pix;
-					core_.addImage(handle, bx.length, bx, coords, img.tags.toString());
-				} else if (pixType == StorageDataType.StorageDataType_GRAY8) {
-					byte[] bx = (byte[])img.pix;
-					core_.addImage(handle, bx.length, bx, coords, img.tags.toString());
-				} else {
-					throw new Exception("Unsupported pixel depth");
-				}
-
-				// Update acquisition progress
-				current_++;
-				notifyListenersStatusUpdate(new DefaultImage(img));
+				processImage(img, handle, pixType, j, k);
 			}
 			if(!active_)
 				break;
@@ -252,13 +223,14 @@ public class AcqRunner extends Thread {
 				throw new Exception("Device " + TTL_SWITCH_DEV_NAME + " does not support property " + TTL_SWITCH_PROP_SEQUENCE);
 			}
 		}
+		int totalcbuff = core_.getBufferTotalCapacity();
 
 		core_.startSequenceAcquisition(total_, 0.0, true);
 		notifyListenersStarted();
 		for(int j = 0; j < timePoints_; j++) {
 			buffFree_ = core_.getBufferFreeCapacity();
-			if(buffFree_ < numberOfChannels * 10)
-				System.out.printf("\nWARNING!!! Low buffer space %d / %d\n\n", buffFree_, core_.getBufferTotalCapacity());
+			if(buffFree_ < totalcbuff / 10)
+				System.out.printf("\nWARNING!!! Low buffer space %d / %d\n\n", buffFree_, totalcbuff);
 
 			for(int k = 0; k < numberOfChannels; k++) {
 				if(core_.isBufferOverflowed()) {
@@ -275,32 +247,7 @@ public class AcqRunner extends Thread {
 
 				// fetch the image
 				TaggedImage img = core_.popNextTaggedImage();
-
-				// create coordinates for the image
-				LongVector coords = new LongVector();
-				coords.add(0);
-				coords.add(j);
-				coords.add(k);
-				coords.add(0);
-				coords.add(0);
-
-				// Add image index to the image metadata
-				img.tags.put("Image-index", current_);
-
-				// Add image to stream
-				if(pixType == StorageDataType.StorageDataType_GRAY16) {
-					short[] bx = (short[])img.pix;
-					core_.addImage(handle, bx.length, bx, coords, img.tags.toString());
-				} else if (pixType == StorageDataType.StorageDataType_GRAY8) {
-					byte[] bx = (byte[])img.pix;
-					core_.addImage(handle, bx.length, bx, coords, img.tags.toString());
-				} else {
-					throw new Exception("Unsupported pixel depth");
-				}
-
-				// Update acquisition progress
-				current_++;
-				notifyListenersStatusUpdate(new DefaultImage(img));
+				processImage(img, handle, pixType, j, k);
 			}
 			if(core_.isBufferOverflowed() || !active_)
 				break;
@@ -308,6 +255,46 @@ public class AcqRunner extends Thread {
 
 		// we are done so stop sequence acquisition
 		core_.stopSequenceAcquisition();
+	}
+
+	/**
+	 * Store image and report progress
+	 * @param img Image
+	 * @param handle Dataset handle (UID)
+	 * @param pixType Pixel type
+	 * @param timep Time point (index)
+	 * @param chind Channel index
+	 * @throws Exception
+	 */
+	private void processImage(TaggedImage img, String handle, StorageDataType pixType, int timep, int chind) throws Exception {
+		// create coordinates for the image
+		LongVector coords = new LongVector();
+		coords.add(0);
+		coords.add(timep);
+		coords.add(chind);
+		coords.add(0);
+		coords.add(0);
+
+		// Add image index to the image metadata
+		img.tags.put("Image-index", current_);
+
+		// Add image to stream
+		long tsstart = System.nanoTime();
+		if(pixType == StorageDataType.StorageDataType_GRAY16) {
+			short[] bx = (short[])img.pix;
+			core_.addImage(handle, bx.length, bx, coords, img.tags.toString());
+		} else if (pixType == StorageDataType.StorageDataType_GRAY8) {
+			byte[] bx = (byte[])img.pix;
+			core_.addImage(handle, bx.length, bx, coords, img.tags.toString());
+		} else {
+			throw new Exception("Unsupported pixel depth");
+		}
+		long tsend = System.nanoTime();
+		double storetimems = (tsend - tsstart) / 1000000.0;
+
+		// Update acquisition progress
+		current_++;
+		notifyListenersStatusUpdate(new DefaultImage(img), storetimems);
 	}
 
 	/**
@@ -331,7 +318,7 @@ public class AcqRunner extends Thread {
 	 */
 	private synchronized void notifyListenersComplete() {
 		for(AcqRunnerListener listener : listeners_)
-			listener.notifyWorkCompleted();
+			listener.notifyAcqCompleted();
 	}
 
 	/**
@@ -339,7 +326,7 @@ public class AcqRunner extends Thread {
 	 */
 	private synchronized void notifyListenersStarted() {
 		for(AcqRunnerListener listener : listeners_)
-			listener.notifyWorkStarted();
+			listener.notifyAcqStarted();
 	}
 
 	/**
@@ -348,15 +335,16 @@ public class AcqRunner extends Thread {
 	 */
 	private synchronized void notifyListenersFail(String msg) {
 		for(AcqRunnerListener listener : listeners_)
-			listener.notifyWorkFailed(msg);
+			listener.notifyAcqFailed(msg);
 	}
 
 	/**
 	 * Notify event listeners of acquisition status update
 	 * @param img Acquired image
+	 * @param storetimems Storage write time (in ms)
 	 */
-	private synchronized void notifyListenersStatusUpdate(Image img) {
+	private synchronized void notifyListenersStatusUpdate(Image img, double storetimems) {
 		for(AcqRunnerListener listener : listeners_)
-			listener.notifyStatusUpdate(current_, total_, img, buffFree_, buffTotal_);
+			listener.notifyAcqStatusUpdate(current_, total_, img, buffFree_, buffTotal_, storetimems);
 	}
 }
