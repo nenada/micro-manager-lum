@@ -33,6 +33,9 @@ public class AcqRunner extends Thread {
 	private int total_;
 	private int buffFree_;
 	private int buffTotal_;
+	private int flushCycle_;
+	private int chunkSize_;
+	private boolean directIo_;
 
 	/**
 	 * Class constructor
@@ -43,8 +46,11 @@ public class AcqRunner extends Thread {
 	 * @param timepoints Number of timepoints
 	 * @param channels Channels list
 	 * @param timeintervalms Time-lapse interval
+	 * @param chunksize Chunk size
+	 * @param directio Use direct I/O
+	 * @param flushcycle Flush cycle
 	 */
-	AcqRunner(CMMCore core, String location, String name, boolean timelapse, int timepoints, Vector<String> channels, int timeintervalms) {
+	AcqRunner(CMMCore core, String location, String name, boolean timelapse, int timepoints, Vector<String> channels, int timeintervalms, int chunksize, boolean directio, int flushcycle) {
 		active_ = false;
 		core_ = core;
 		location_ = location;
@@ -55,6 +61,9 @@ public class AcqRunner extends Thread {
 		buffFree_ = 0;
 		buffTotal_ = 0;
 		channels_ = channels;
+		chunkSize_ = chunksize;
+		directIo_ = directio;
+		flushCycle_ = flushcycle;
 		stateMutex_ = new Object();
 	}
 
@@ -71,7 +80,19 @@ public class AcqRunner extends Thread {
 			return;
 		}
 
+		String storedriver = core_.getStorageDevice();
+		int prevChunkSize;
+		int prevFlushCycle;
+		boolean prevDirectIo;
 		try {
+			// Store storage current driver configuration
+			prevFlushCycle = Integer.parseInt(core_.getProperty(storedriver, "FlushCycle"));
+			prevDirectIo = Integer.parseInt(core_.getProperty(storedriver, "DirectIO")) != 0;
+			prevChunkSize = Integer.parseInt(core_.getProperty(storedriver, "ChunkSize"));
+
+			// Apply selected storage driver configration
+			setDriverConfig(storedriver, chunkSize_, directIo_, flushCycle_);
+
 			// Create the dataset
 			LongVector shape = new LongVector();
 			shape.add(1);
@@ -114,6 +135,7 @@ public class AcqRunner extends Thread {
 				core_.setExposure(exposureMs);
 			if(!readoutMode.equals(core_.getCurrentConfig(READOUT_CONFIG_GROUP)))
 				core_.setConfig(READOUT_CONFIG_GROUP, readoutMode);
+			setDriverConfig(storedriver, prevChunkSize, prevDirectIo, prevFlushCycle);
 
 			// Notify that the acquisition is complete
 			if(error.isEmpty())
@@ -266,7 +288,7 @@ public class AcqRunner extends Thread {
 	 * @param chind Channel index
 	 * @throws Exception
 	 */
-	private void processImage(TaggedImage img, String handle, StorageDataType pixType, int timep, int chind) throws Exception {
+	protected void processImage(TaggedImage img, String handle, StorageDataType pixType, int timep, int chind) throws Exception {
 		// create coordinates for the image
 		LongVector coords = new LongVector();
 		coords.add(0);
@@ -295,6 +317,20 @@ public class AcqRunner extends Thread {
 		// Update acquisition progress
 		current_++;
 		notifyListenersStatusUpdate(new DefaultImage(img), storetimems);
+	}
+
+	/**
+	 * Restore previous driver configuration
+	 * @param driver Driver name
+	 * @param chunksz Chunk size
+	 * @param dirio Direct I/O
+	 * @param flushcyc Flush cycle
+	 * @throws Exception
+	 */
+	protected void setDriverConfig(String driver, int chunksz, boolean dirio, int flushcyc) throws Exception {
+		core_.setProperty(driver, "ChunkSize", chunksz);
+		core_.setProperty(driver, "DirectIO", dirio);
+		core_.setProperty(driver, "FlushCycle", flushcyc);
 	}
 
 	/**
