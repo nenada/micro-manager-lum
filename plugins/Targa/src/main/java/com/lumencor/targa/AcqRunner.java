@@ -95,7 +95,6 @@ public class AcqRunner extends Thread {
 
 			// Create the dataset
 			LongVector shape = new LongVector();
-			shape.add(1);
 			shape.add(timePoints_);
 			shape.add(channels_.isEmpty() ? 1 : channels_.size());
 			shape.add((int)core_.getImageWidth());
@@ -291,7 +290,6 @@ public class AcqRunner extends Thread {
 	protected void processImage(TaggedImage img, String handle, StorageDataType pixType, int timep, int chind) throws Exception {
 		// create coordinates for the image
 		LongVector coords = new LongVector();
-		coords.add(0);
 		coords.add(timep);
 		coords.add(chind);
 		coords.add(0);
