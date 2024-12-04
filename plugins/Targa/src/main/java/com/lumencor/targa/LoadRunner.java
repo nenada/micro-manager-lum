@@ -21,17 +21,19 @@ public class LoadRunner extends Thread {
 	private final Object stateMutex_;
 	private final String dataPath_;
 	private boolean active_;
+	private boolean loadVirtual_;
 
 	/**
 	 * Class constructor
 	 * @param studio Micro-manager app handle
 	 * @param path Dataset path
 	 */
-	LoadRunner(Studio studio, String path) {
+	LoadRunner(Studio studio, String path, boolean virtual) {
 		mmstudio_ = studio;
 		core_ = studio.getCMMCore();
 		dataPath_ = path;
 		active_ = false;
+		loadVirtual_ = virtual;
 		stateMutex_ = new Object();
 	}
 

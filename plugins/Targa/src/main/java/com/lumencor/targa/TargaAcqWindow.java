@@ -35,6 +35,8 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	private final static String CFG_CHUNKSIZE = "ChunkSize";
 	private final static String CFG_FLUSHCYCLE = "FlushCycle";
 	private final static String CFG_DIRECTIO = "DirectIO";
+	private final static String CFG_VIRTUAL = "LoadVirtual";
+	private final static String CFG_FASTEXP = "FastExp";
 	private final static String CFG_CHANNELS = "Channels";
 	private final static String CFG_WNDX = "WndX";
 	private final static String CFG_WNDY = "WndY";
@@ -44,9 +46,11 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	private final JSpinner tbTimePoints_;
 	private final JSpinner tbChunkSize_;
 	private final JSpinner tbFlushCycle_;
-	private final JFormattedTextField tbTimeInterval_;
+	private final JSpinner tbTimeInterval_;
 	private final JCheckBox cbTimeLapse_;
 	private final JCheckBox cbDirectIo_;
+	private final JCheckBox cbFastExp_;
+	private final JCheckBox cbVirtualLoad_;
 	private final JButton loadButton_;
 	private final JButton cancelLoadButton_;
 	private final JButton chooseLocationButton_;
@@ -68,6 +72,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	private final JLabel labelCbuffStatus_;
 	private final JLabel labelCbuffMemory_;
 	private final JLabel labelAcqStoreFps_;
+	private final JLabel labelAcqWriteFps_;
 	private final JProgressBar progressBar_;
 	private final JProgressBar cbuffCapacity_;
 
@@ -80,6 +85,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	private int timeIntervalMs_;
 	private int flushCycle_;
 	private int chunkSize_;
+	private long acqStartTime_;
 	private double totalStoreTime_;
 	private boolean runnerActive_;
 	private boolean loadActive_;
@@ -98,6 +104,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		totalStoreTime_ = 0;
 		flushCycle_ = 0;
 		chunkSize_ = 0;
+		acqStartTime_ = 0;
 		coreInit_ = false;
 		runnerActive_ = false;
 		loadActive_ = false;
@@ -115,8 +122,8 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		super.setTitle("Targa Acquisition " + TargaPlugin.VERSION_INFO);
 		super.setIconImage(Toolkit.getDefaultToolkit().getImage(getClass().getResource("/org/micromanager/icons/microscope.gif")));
 		super.setResizable(false);
-		super.setPreferredSize(new Dimension(800, 560));
-		super.setBounds(400, 200, 800, 560);
+		super.setPreferredSize(new Dimension(800, 620));
+		super.setBounds(400, 200, 800, 620);
 		super.pack();
 
 		// Set layout manager
@@ -134,9 +141,6 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 				applySettingsFromUI();
 			}
 		};
-
-		NumberFormat integerFieldFormatter = NumberFormat.getIntegerInstance();
-		integerFieldFormatter.setMaximumFractionDigits(0);
 
 		// Add UI components
 		// Add status bar
@@ -202,6 +206,14 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		layout.putConstraint(SpringLayout.EAST, loadButton_, 0, SpringLayout.EAST, tbName_);
 		layout.putConstraint(SpringLayout.NORTH, loadButton_, 10, SpringLayout.SOUTH, tbName_);
 
+		// Add Direct I/O check box
+		cbVirtualLoad_ = new JCheckBox("Virtual");
+		cbVirtualLoad_.setHorizontalTextPosition(SwingConstants.LEADING);
+		cbVirtualLoad_.setHorizontalAlignment(SwingConstants.RIGHT);
+		contentPane.add(cbVirtualLoad_);
+		layout.putConstraint(SpringLayout.EAST, cbVirtualLoad_, -15, SpringLayout.WEST, loadButton_);
+		layout.putConstraint(SpringLayout.NORTH, cbVirtualLoad_, 3, SpringLayout.NORTH, loadButton_);
+
 		// Add cancel load button
 		cancelLoadButton_ = new JButton("Cancel Loading");
 		cancelLoadButton_.setToolTipText("Cancel Acquisition Loading");
@@ -265,6 +277,31 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		layout.putConstraint(SpringLayout.EAST, tbTimePoints_, 80, SpringLayout.WEST, tbTimePoints_);
 		layout.putConstraint(SpringLayout.NORTH, tbTimePoints_, -2, SpringLayout.NORTH, labelTimepoints);
 
+		// Add fast exp check box
+		cbFastExp_ = new JCheckBox("Fast Exp");
+		cbFastExp_.setHorizontalTextPosition(SwingConstants.LEADING);
+		cbFastExp_.setHorizontalAlignment(SwingConstants.RIGHT);
+		cbFastExp_.addActionListener((ActionEvent e) -> updateTimeLapseOptions());
+		layout.putConstraint(SpringLayout.WEST, cbFastExp_, 0, SpringLayout.WEST, cbDirectIo_);
+		layout.putConstraint(SpringLayout.EAST, cbFastExp_, 0, SpringLayout.EAST, cbDirectIo_);
+		layout.putConstraint(SpringLayout.NORTH, cbFastExp_, -3, SpringLayout.NORTH, labelTimepoints);
+		contentPane.add(cbFastExp_);
+
+		// === THIRD ROW ========================================
+		// Add time interval label
+		final JLabel labelTimeInterval = new JLabel("Interval [ms]");
+		contentPane.add(labelTimeInterval);
+		layout.putConstraint(SpringLayout.WEST, labelTimeInterval, 20, SpringLayout.WEST, contentPane);
+		layout.putConstraint(SpringLayout.NORTH, labelTimeInterval, 20, SpringLayout.SOUTH, labelTimepoints);
+
+		// Add time interval text box
+		tbTimeInterval_ = new JSpinner(new SpinnerNumberModel(10, 0, null, 1));
+		tbTimeInterval_.addChangeListener((ChangeEvent e) -> applySettingsFromUI());
+		contentPane.add(tbTimeInterval_);
+		layout.putConstraint(SpringLayout.WEST, tbTimeInterval_, 0, SpringLayout.WEST, tbLocation_);
+		layout.putConstraint(SpringLayout.EAST, tbTimeInterval_, 80, SpringLayout.WEST, tbTimeInterval_);
+		layout.putConstraint(SpringLayout.NORTH, tbTimeInterval_, -2, SpringLayout.NORTH, labelTimeInterval);
+
 		// Add time lapse check box
 		cbTimeLapse_ = new JCheckBox("Time Lapse");
 		cbTimeLapse_.setHorizontalTextPosition(SwingConstants.LEADING);
@@ -272,28 +309,15 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		cbTimeLapse_.addActionListener((ActionEvent e) -> updateTimeLapseOptions());
 		layout.putConstraint(SpringLayout.WEST, cbTimeLapse_, 0, SpringLayout.WEST, cbDirectIo_);
 		layout.putConstraint(SpringLayout.EAST, cbTimeLapse_, 0, SpringLayout.EAST, cbDirectIo_);
-		layout.putConstraint(SpringLayout.NORTH, cbTimeLapse_, -3, SpringLayout.NORTH, labelTimepoints);
+		layout.putConstraint(SpringLayout.NORTH, cbTimeLapse_, -3, SpringLayout.NORTH, labelTimeInterval);
 		contentPane.add(cbTimeLapse_);
 
-		// Add time interval label
-		final JLabel labelTimeInterval = new JLabel("Interval [ms]");
-		contentPane.add(labelTimeInterval);
-		layout.putConstraint(SpringLayout.WEST, labelTimeInterval, 0, SpringLayout.WEST, labelFlushCycle);
-		layout.putConstraint(SpringLayout.NORTH, labelTimeInterval, 0, SpringLayout.NORTH, labelTimepoints);
-
-		// Add time interval text box
-		tbTimeInterval_ = new JFormattedTextField(integerFieldFormatter);
-		tbTimeInterval_.addFocusListener(focusListener);
-		contentPane.add(tbTimeInterval_);
-		layout.putConstraint(SpringLayout.WEST, tbTimeInterval_, 0, SpringLayout.WEST, tbFlushCycle_);
-		layout.putConstraint(SpringLayout.EAST, tbTimeInterval_, 80, SpringLayout.WEST, tbTimeInterval_);
-		layout.putConstraint(SpringLayout.NORTH, tbTimeInterval_, 0, SpringLayout.NORTH, tbTimePoints_);
-
+		// === CHANNELS SECTION ========================================
 		// Add channels configuration
 		final JLabel labelChannels = new JLabel("Channels");
 		contentPane.add(labelChannels);
-		layout.putConstraint(SpringLayout.WEST, labelChannels, 0, SpringLayout.WEST, labelTimepoints);
-		layout.putConstraint(SpringLayout.NORTH, labelChannels, 20, SpringLayout.SOUTH, labelTimepoints);
+		layout.putConstraint(SpringLayout.WEST, labelChannels, 0, SpringLayout.WEST, labelTimeInterval);
+		layout.putConstraint(SpringLayout.NORTH, labelChannels, 20, SpringLayout.SOUTH, labelTimeInterval);
 
 		// Add channels list
 		listChannels_ = new JList<>();
@@ -350,6 +374,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		layout.putConstraint(SpringLayout.WEST, channelDownButton_, 0, SpringLayout.WEST, channelAddButton_);
 		layout.putConstraint(SpringLayout.NORTH, channelDownButton_, 5, SpringLayout.SOUTH, channelUpButton_);
 
+		// === INFO SECTION ========================================
 		// Add info labels
 		labelDataSize_ = new JLabel("Dataset size: -");
 		contentPane.add(labelDataSize_);
@@ -438,12 +463,19 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		layout.putConstraint(SpringLayout.EAST, cbuffCapacity_, 200, SpringLayout.EAST, labelCbuffStatus_);
 		layout.putConstraint(SpringLayout.SOUTH, cbuffCapacity_, -8, SpringLayout.NORTH, progressBar_);
 
-		// Add label for storage write frame-rate during acquisition
-		labelAcqStoreFps_ = new JLabel("Storage write frame rate: -");
+		// Add label for storage throughput frame-rate during acquisition
+		labelAcqStoreFps_ = new JLabel("Storage throughput: -");
 		labelAcqStoreFps_.setVisible(false);
 		contentPane.add(labelAcqStoreFps_);
 		layout.putConstraint(SpringLayout.WEST, labelAcqStoreFps_, 0, SpringLayout.WEST, labelCbuffStatus_);
 		layout.putConstraint(SpringLayout.SOUTH, labelAcqStoreFps_, -15, SpringLayout.NORTH, labelCbuffStatus_);
+
+		// Add label for storage write frame-rate during acquisition
+		labelAcqWriteFps_ = new JLabel("Write frame rate: -");
+		labelAcqWriteFps_.setVisible(false);
+		contentPane.add(labelAcqWriteFps_);
+		layout.putConstraint(SpringLayout.WEST, labelAcqWriteFps_, 0, SpringLayout.WEST, labelCbuffStatus_);
+		layout.putConstraint(SpringLayout.SOUTH, labelAcqWriteFps_, -35, SpringLayout.NORTH, labelCbuffStatus_);
 
 		// Add circular buffer memory footprint label
 		labelCbuffMemory_ = new JLabel("0 MB");
@@ -482,6 +514,8 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		prefs.putInt(CFG_CHUNKSIZE, chunkSize_);
 		prefs.putInt(CFG_FLUSHCYCLE, flushCycle_);
 		prefs.putBoolean(CFG_DIRECTIO, cbDirectIo_.isSelected());
+		prefs.putBoolean(CFG_VIRTUAL, cbVirtualLoad_.isSelected());
+		prefs.putBoolean(CFG_FASTEXP, cbFastExp_.isSelected());
 		prefs.put(CFG_CHANNELS, chlist.toString());
 		prefs.putInt(CFG_WNDX, super.getBounds().x);
 		prefs.putInt(CFG_WNDY, super.getBounds().y);
@@ -504,6 +538,8 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		flushCycle_ = prefs.getInt(CFG_FLUSHCYCLE, 0);
 		boolean tl = prefs.getBoolean(CFG_TIMELAPSE, false);
 		boolean dio = prefs.getBoolean(CFG_DIRECTIO, false);
+		boolean loadvirtual = prefs.getBoolean(CFG_VIRTUAL, false);
+		boolean fastexp = prefs.getBoolean(CFG_FASTEXP, false);
 		int wndx = prefs.getInt(CFG_WNDX, super.getBounds().x);
 		int wndy = prefs.getInt(CFG_WNDY, super.getBounds().y);
 		String chlist = prefs.get(CFG_CHANNELS, "");
@@ -517,6 +553,8 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		tbTimePoints_.setValue(timePoints_);
 		cbTimeLapse_.setSelected(tl);
 		cbDirectIo_.setSelected(dio);
+		cbVirtualLoad_.setSelected(loadvirtual);
+		cbFastExp_.setSelected(fastexp);
 		tbTimeInterval_.setValue(timeIntervalMs_);
 		tbTimeInterval_.setEnabled(tl);
 		listChannels_.setListData(channels_);
@@ -532,7 +570,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 			return;
 
 		loadActive_ = true;
-		loadWorker_ = new LoadRunner(mmstudio_, result.getAbsolutePath());
+		loadWorker_ = new LoadRunner(mmstudio_, result.getAbsolutePath(), cbVirtualLoad_.isSelected());
 		loadWorker_.addListener(this);
 		loadWorker_.start();
 
@@ -568,7 +606,8 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	protected void startAcquisition() {
 		runnerActive_ = true;
 		totalStoreTime_ = 0;
-		acqWorker_ = new AcqRunner(core_, dataDir_, acqName_, cbTimeLapse_.isSelected(), timePoints_, channels_, timeIntervalMs_, chunkSize_, cbDirectIo_.isSelected(), flushCycle_);
+		acqStartTime_ = 0;
+		acqWorker_ = new AcqRunner(core_, dataDir_, acqName_, cbTimeLapse_.isSelected(), timePoints_, channels_, timeIntervalMs_, chunkSize_, cbDirectIo_.isSelected(), flushCycle_, cbFastExp_.isSelected());
 		acqWorker_.addListener(this);
 		acqWorker_.start();
 
@@ -718,6 +757,9 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		tbChunkSize_.setEnabled(!runnerActive_ && !loadActive_);
 		tbFlushCycle_.setEnabled(!runnerActive_ && !loadActive_);
 		cbDirectIo_.setEnabled(!runnerActive_ && !loadActive_);
+		cbFastExp_.setEnabled(!runnerActive_ && !loadActive_);
+		cbVirtualLoad_.setEnabled(!runnerActive_ && !loadActive_);
+		cbVirtualLoad_.setVisible(!loadActive_);
 		tbTimePoints_.setEnabled(!runnerActive_ && !loadActive_);
 		tbTimeInterval_.setEnabled(!runnerActive_&& !loadActive_ && cbTimeLapse_.isSelected());
 		cbTimeLapse_.setEnabled(!runnerActive_&& !loadActive_);
@@ -732,6 +774,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		cbuffCapacity_.setVisible(runnerActive_);
 		labelCbuffMemory_.setVisible(runnerActive_);
 		labelAcqStoreFps_.setVisible(runnerActive_);
+		labelAcqWriteFps_.setVisible(runnerActive_);
 	}
 
 	/**
@@ -746,7 +789,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 			tbTimePoints_.setValue(timePoints_);
 		}
 		try {
-			timeIntervalMs_ = Integer.parseInt(tbTimeInterval_.getText());
+			timeIntervalMs_ = (int)tbTimeInterval_.getValue();
 		} catch(NumberFormatException e) {
 			tbTimeInterval_.setValue(timeIntervalMs_);
 		}
@@ -839,11 +882,11 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	 * Update acquisition elapsed time
 	 */
 	protected void updateAcqTime() {
-		long startTime = System.nanoTime();
+		acqStartTime_ = System.nanoTime();
 		while(runnerActive_) {
 			try {
 				long currtime = System.nanoTime();
-				double tottimesec = (currtime - startTime) / 1000000000.0;
+				double tottimesec = (currtime - acqStartTime_) / 1000000000.0;
 				int thours = (int)Math.floor(tottimesec / 3600.0);
 				int tmins = (int)Math.floor((tottimesec - thours * 3600.0) / 60.0);
 				int tsec = (int)Math.round(tottimesec - thours * 3600.0 - tmins * 60.0);
@@ -915,9 +958,13 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 
 		// Calculate storage driver statistics
 		totalStoreTime_ += storetimems;
-		double avgtime = curr == 0 ? 0 : totalStoreTime_ / curr;
-		double avgfps = avgtime == 0 ? 0 : 1000.0 / avgtime;
-		labelAcqStoreFps_.setText(String.format("Storage write frame rate: %.1f FPS", avgfps));
+		double avgwritetime = curr == 0 ? 0 : totalStoreTime_ / curr;
+		double avgwritefps = avgwritetime == 0 ? 0 : 1000.0 / avgwritetime;
+		labelAcqWriteFps_.setText(String.format("Write frame rate: %.1f FPS", avgwritefps));
+
+		double totalTime = (System.nanoTime() - acqStartTime_) / 1000000000.0;
+		double avgstorefps = totalTime == 0 ? 0 : (double)curr / totalTime;
+		labelAcqStoreFps_.setText(String.format("Storage throughput: %.1f FPS", avgstorefps));
 
 		// Update current image
 		try {

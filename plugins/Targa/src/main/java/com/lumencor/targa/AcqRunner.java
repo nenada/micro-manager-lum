@@ -36,6 +36,7 @@ public class AcqRunner extends Thread {
 	private int flushCycle_;
 	private int chunkSize_;
 	private boolean directIo_;
+	private boolean fastExp_;
 
 	/**
 	 * Class constructor
@@ -49,8 +50,9 @@ public class AcqRunner extends Thread {
 	 * @param chunksize Chunk size
 	 * @param directio Use direct I/O
 	 * @param flushcycle Flush cycle
+	 * @param fastexp Fast exp flag
 	 */
-	AcqRunner(CMMCore core, String location, String name, boolean timelapse, int timepoints, Vector<String> channels, int timeintervalms, int chunksize, boolean directio, int flushcycle) {
+	AcqRunner(CMMCore core, String location, String name, boolean timelapse, int timepoints, Vector<String> channels, int timeintervalms, int chunksize, boolean directio, int flushcycle, boolean fastexp) {
 		active_ = false;
 		core_ = core;
 		location_ = location;
@@ -64,6 +66,7 @@ public class AcqRunner extends Thread {
 		chunkSize_ = chunksize;
 		directIo_ = directio;
 		flushCycle_ = flushcycle;
+		fastExp_ = fastexp;
 		stateMutex_ = new Object();
 	}
 
@@ -222,6 +225,7 @@ public class AcqRunner extends Thread {
 
 		if (numberOfSpecifiedChannels == 1) {
 			// if we have only one channel we will set it before starting acquisition
+			core_.setConfig(READOUT_CONFIG_GROUP, fastExp_ ? READOUT_FAST_CONFIG : READOUT_STANDARD_CONFIG);
 			core_.setConfig(core_.getChannelGroup(), channels_.get(0));
 			core_.waitForConfig(core_.getChannelGroup(), channels_.get(0));
 		} else if (numberOfSpecifiedChannels > 1) {
