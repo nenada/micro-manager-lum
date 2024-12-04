@@ -10,11 +10,12 @@ import java.awt.*;
 import java.awt.event.*;
 import java.io.File;
 import java.io.IOException;
-import java.text.NumberFormat;
 import java.util.Arrays;
 import java.util.Vector;
 import java.util.prefs.Preferences;
 
+import mmcorej.org.json.JSONArray;
+import mmcorej.org.json.JSONObject;
 import org.micromanager.Studio;
 import org.micromanager.data.*;
 import org.micromanager.data.Image;
@@ -40,6 +41,9 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	private final static String CFG_CHANNELS = "Channels";
 	private final static String CFG_WNDX = "WndX";
 	private final static String CFG_WNDY = "WndY";
+	private final static String CFG_CHNAME = "name";
+	private final static String CFG_CHEXP = "exposure";
+	private final static String CFG_CHINT = "intensity";
 
 	private final JTextField tbLocation_;
 	private final JTextField tbName_;
@@ -60,7 +64,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	private final JButton channelRemoveButton_;
 	private final JButton channelUpButton_;
 	private final JButton channelDownButton_;
-	private final JList<String> listChannels_;
+	private final JTable listChannels_;
 	private final JLabel labelDataSize_;
 	private final JLabel labelDuration_;
 	private final JLabel labelExposure_;
@@ -94,6 +98,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	private LoadRunner loadWorker_;
 	private RewritableDatastore currentAcq_;
 	private Datastore loadedDatastore_;
+	private ChannelDataModel channelsDataModel_;
 
 	/**
 	 * Class constructor
@@ -111,6 +116,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		mmstudio_ = studio;
 		core_ = studio.getCMMCore();
 		channels_ = new Vector<>();
+		channelsDataModel_ = new ChannelDataModel();
 
 		// Set window properties
 		super.addWindowListener(new WindowAdapter() {
@@ -296,6 +302,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 
 		// Add time interval text box
 		tbTimeInterval_ = new JSpinner(new SpinnerNumberModel(10, 0, null, 1));
+		tbTimeInterval_.setEditor(new JSpinner.NumberEditor(tbTimeInterval_));
 		tbTimeInterval_.addChangeListener((ChangeEvent e) -> applySettingsFromUI());
 		contentPane.add(tbTimeInterval_);
 		layout.putConstraint(SpringLayout.WEST, tbTimeInterval_, 0, SpringLayout.WEST, tbLocation_);
@@ -320,13 +327,11 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		layout.putConstraint(SpringLayout.NORTH, labelChannels, 20, SpringLayout.SOUTH, labelTimeInterval);
 
 		// Add channels list
-		listChannels_ = new JList<>();
-		listChannels_.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-		listChannels_.setLayoutOrientation(JList.VERTICAL);
-		listChannels_.setVisibleRowCount(-1);
-		listChannels_.addListSelectionListener((ListSelectionEvent e) -> updateChannelCommands());
+		listChannels_ = new JTable(channelsDataModel_);
+		listChannels_.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+		listChannels_.getSelectionModel().addListSelectionListener((ListSelectionEvent e) -> updateChannelCommands());
 		JScrollPane listScroller = new JScrollPane(listChannels_);
-		listScroller.setPreferredSize(new Dimension(180, 150));
+		listScroller.setPreferredSize(new Dimension(250, 150));
 		contentPane.add(listScroller);
 		layout.putConstraint(SpringLayout.WEST, listScroller, 0, SpringLayout.WEST, tbTimePoints_);
 		layout.putConstraint(SpringLayout.NORTH, listScroller, -2, SpringLayout.NORTH, labelChannels);
@@ -378,7 +383,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		// Add info labels
 		labelDataSize_ = new JLabel("Dataset size: -");
 		contentPane.add(labelDataSize_);
-		layout.putConstraint(SpringLayout.WEST, labelDataSize_, 100, SpringLayout.EAST, channelAddButton_);
+		layout.putConstraint(SpringLayout.WEST, labelDataSize_, 40, SpringLayout.EAST, channelAddButton_);
 		layout.putConstraint(SpringLayout.NORTH, labelDataSize_, 0, SpringLayout.NORTH, listScroller);
 
 		labelDuration_ = new JLabel("Dataset duration: -");
@@ -502,9 +507,19 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		Preferences prefs = Preferences.userRoot().node(this.getClass().getName());
 		if(prefs == null)
 			return;
-		StringBuilder chlist = new StringBuilder();
-		for(String s : channels_)
-			chlist.append((chlist.length() == 0) ? "" : ",").append(s);
+		JSONArray jarr = new JSONArray();
+		try {
+			for(int i = 0; i < channelsDataModel_.getRowCount(); i++) {
+				JSONObject chobj = new JSONObject();
+				chobj.put(CFG_CHNAME, (String)channelsDataModel_.getValueAt(i, 0));
+				chobj.put(CFG_CHEXP, (double)channelsDataModel_.getValueAt(i, 1));
+				chobj.put(CFG_CHINT, (int)channelsDataModel_.getValueAt(i, 2));
+				jarr.put(chobj);
+			}
+		} catch(Exception e) {
+			jarr = new JSONArray();
+			mmstudio_.getLogManager().logError(e);
+		}
 
 		prefs.put(CFG_LOCATION, dataDir_);
 		prefs.put(CFG_NAME, acqName_);
@@ -516,7 +531,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		prefs.putBoolean(CFG_DIRECTIO, cbDirectIo_.isSelected());
 		prefs.putBoolean(CFG_VIRTUAL, cbVirtualLoad_.isSelected());
 		prefs.putBoolean(CFG_FASTEXP, cbFastExp_.isSelected());
-		prefs.put(CFG_CHANNELS, chlist.toString());
+		prefs.put(CFG_CHANNELS, jarr.toString());
 		prefs.putInt(CFG_WNDX, super.getBounds().x);
 		prefs.putInt(CFG_WNDY, super.getBounds().y);
 	}
@@ -542,10 +557,25 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		boolean fastexp = prefs.getBoolean(CFG_FASTEXP, false);
 		int wndx = prefs.getInt(CFG_WNDX, super.getBounds().x);
 		int wndy = prefs.getInt(CFG_WNDY, super.getBounds().y);
+
+		// Load channels configuration
 		String chlist = prefs.get(CFG_CHANNELS, "");
 		channels_.clear();
-		if(!chlist.isEmpty())
-			channels_.addAll(Arrays.asList(chlist.split(",")));
+		channelsDataModel_.clear();
+		if(!chlist.isEmpty()) {
+			try {
+				JSONArray jarr = new JSONArray(chlist);
+				for(int i = 0; i < jarr.length(); i++) {
+					JSONObject chobj = jarr.getJSONObject(i);
+					if(chobj == null || !chobj.has(CFG_CHNAME))
+						continue;
+					channelsDataModel_.add(chobj.getString(CFG_CHNAME), chobj.optDouble(CFG_CHEXP, 10.0), chobj.optInt(CFG_CHINT, 1000));
+					channels_.add(chobj.getString(CFG_CHNAME));
+				}
+			} catch(Exception e) {
+				mmstudio_.getLogManager().logError(e);
+			}
+		}
 
 		// Update UI
 		tbLocation_.setText(dataDir_);
@@ -557,7 +587,6 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		cbFastExp_.setSelected(fastexp);
 		tbTimeInterval_.setValue(timeIntervalMs_);
 		tbTimeInterval_.setEnabled(tl);
-		listChannels_.setListData(channels_);
 		super.setLocation(wndx, wndy);
 	}
 
@@ -672,7 +701,6 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 			return;
 		}
 
-
 		// Show channel selection dialog
 		ChannelSelectionDlg wnd = new ChannelSelectionDlg(this, allchannels);
 		wnd.setVisible(true);
@@ -683,7 +711,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 			return;
 		}
 		channels_.add(schannel);
-		listChannels_.setListData(channels_);
+		channelsDataModel_.add(schannel, wnd.getExposure(), wnd.getIntensity());
 		updateAcqInfo();
 	}
 
@@ -691,11 +719,11 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	 * Remove selected channel
 	 */
 	protected void removeChannel() {
-		if(listChannels_.getSelectedIndex() < 0 || listChannels_.getSelectedIndex() >= channels_.size())
+		if(listChannels_.getSelectedRow() < 0 || listChannels_.getSelectedRow() >= channels_.size())
 			return;
 
-		channels_.remove(listChannels_.getSelectedIndex());
-		listChannels_.setListData(channels_);
+		channels_.remove(listChannels_.getSelectedRow());
+		channelsDataModel_.remove(listChannels_.getSelectedRow());
 		updateAcqInfo();
 	}
 
@@ -703,47 +731,33 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	 * Move selected channel up
 	 */
 	protected void moveChannelUp() {
-		int ind = listChannels_.getSelectedIndex();
+		int ind = listChannels_.getSelectedRow();
 		if(ind < 1 || ind >= channels_.size())
 			return;
-
-		// Switch channels
-		String tmp = channels_.get(ind);
-		channels_.set(ind, channels_.get(ind - 1));
-		channels_.set(ind - 1, tmp);
-
-		// Update UI
-		listChannels_.setListData(channels_);
-		listChannels_.setSelectedIndex(ind - 1);
+		channelsDataModel_.moveUp(ind);
+		SwingUtilities.invokeLater(() -> listChannels_.setRowSelectionInterval(ind - 1, ind - 1));
 	}
 
 	/**
 	 * Move selected channel down
 	 */
 	protected void moveChannelDown() {
-		int ind = listChannels_.getSelectedIndex();
+		int ind = listChannels_.getSelectedRow();
 		if(ind < 0 || ind >= channels_.size() - 1)
 			return;
-
-		// Switch channels
-		String tmp = channels_.get(ind);
-		channels_.set(ind, channels_.get(ind + 1));
-		channels_.set(ind + 1, tmp);
-
-		// Update UI
-		listChannels_.setListData(channels_);
-		listChannels_.setSelectedIndex(ind + 1);
+		channelsDataModel_.moveDown(ind);
+		SwingUtilities.invokeLater(() -> listChannels_.setRowSelectionInterval(ind + 1, ind + 1));
 	}
 
 	/**
 	 * Update channel list command buttons
 	 */
 	protected void updateChannelCommands() {
-		int ind = listChannels_.getSelectedIndex();
+		int ind = listChannels_.getSelectedRow();
 		channelAddButton_.setEnabled(!runnerActive_ && !loadActive_);
-		channelRemoveButton_.setEnabled(!runnerActive_ && !loadActive_ && listChannels_.getSelectedIndex() >= 0 && !channels_.isEmpty());
-		channelUpButton_.setEnabled(!runnerActive_ && !loadActive_ && listChannels_.getSelectedIndex() > 0 && !channels_.isEmpty());
-		channelDownButton_.setEnabled(!runnerActive_ && !loadActive_ && listChannels_.getSelectedIndex() >= 0 && listChannels_.getSelectedIndex() < channels_.size() - 1);
+		channelRemoveButton_.setEnabled(!runnerActive_ && !loadActive_ && listChannels_.getSelectedRow() >= 0 && !channels_.isEmpty());
+		channelUpButton_.setEnabled(!runnerActive_ && !loadActive_ && listChannels_.getSelectedRow() > 0 && !channels_.isEmpty());
+		channelDownButton_.setEnabled(!runnerActive_ && !loadActive_ && listChannels_.getSelectedRow() >= 0 && listChannels_.getSelectedRow() < channels_.size() - 1);
 	}
 
 	/**
