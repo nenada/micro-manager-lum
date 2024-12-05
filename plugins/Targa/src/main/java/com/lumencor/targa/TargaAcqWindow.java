@@ -36,7 +36,6 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	private final static String CFG_CHUNKSIZE = "ChunkSize";
 	private final static String CFG_FLUSHCYCLE = "FlushCycle";
 	private final static String CFG_DIRECTIO = "DirectIO";
-	private final static String CFG_VIRTUAL = "LoadVirtual";
 	private final static String CFG_FASTEXP = "FastExp";
 	private final static String CFG_CHANNELS = "Channels";
 	private final static String CFG_WNDX = "WndX";
@@ -54,7 +53,6 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	private final JCheckBox cbTimeLapse_;
 	private final JCheckBox cbDirectIo_;
 	private final JCheckBox cbFastExp_;
-	private final JCheckBox cbVirtualLoad_;
 	private final JButton loadButton_;
 	private final JButton cancelLoadButton_;
 	private final JButton chooseLocationButton_;
@@ -211,14 +209,6 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		contentPane.add(loadButton_);
 		layout.putConstraint(SpringLayout.EAST, loadButton_, 0, SpringLayout.EAST, tbName_);
 		layout.putConstraint(SpringLayout.NORTH, loadButton_, 10, SpringLayout.SOUTH, tbName_);
-
-		// Add Direct I/O check box
-		cbVirtualLoad_ = new JCheckBox("Virtual");
-		cbVirtualLoad_.setHorizontalTextPosition(SwingConstants.LEADING);
-		cbVirtualLoad_.setHorizontalAlignment(SwingConstants.RIGHT);
-		contentPane.add(cbVirtualLoad_);
-		layout.putConstraint(SpringLayout.EAST, cbVirtualLoad_, -15, SpringLayout.WEST, loadButton_);
-		layout.putConstraint(SpringLayout.NORTH, cbVirtualLoad_, 3, SpringLayout.NORTH, loadButton_);
 
 		// Add cancel load button
 		cancelLoadButton_ = new JButton("Cancel Loading");
@@ -529,7 +519,6 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		prefs.putInt(CFG_CHUNKSIZE, chunkSize_);
 		prefs.putInt(CFG_FLUSHCYCLE, flushCycle_);
 		prefs.putBoolean(CFG_DIRECTIO, cbDirectIo_.isSelected());
-		prefs.putBoolean(CFG_VIRTUAL, cbVirtualLoad_.isSelected());
 		prefs.putBoolean(CFG_FASTEXP, cbFastExp_.isSelected());
 		prefs.put(CFG_CHANNELS, jarr.toString());
 		prefs.putInt(CFG_WNDX, super.getBounds().x);
@@ -553,7 +542,6 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		flushCycle_ = prefs.getInt(CFG_FLUSHCYCLE, 0);
 		boolean tl = prefs.getBoolean(CFG_TIMELAPSE, false);
 		boolean dio = prefs.getBoolean(CFG_DIRECTIO, false);
-		boolean loadvirtual = prefs.getBoolean(CFG_VIRTUAL, false);
 		boolean fastexp = prefs.getBoolean(CFG_FASTEXP, false);
 		int wndx = prefs.getInt(CFG_WNDX, super.getBounds().x);
 		int wndy = prefs.getInt(CFG_WNDY, super.getBounds().y);
@@ -587,7 +575,6 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		tbTimePoints_.setValue(timePoints_);
 		cbTimeLapse_.setSelected(tl);
 		cbDirectIo_.setSelected(dio);
-		cbVirtualLoad_.setSelected(loadvirtual);
 		cbFastExp_.setSelected(fastexp);
 		tbTimeInterval_.setValue(timeIntervalMs_);
 		tbTimeInterval_.setEnabled(tl);
@@ -603,7 +590,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 			return;
 
 		loadActive_ = true;
-		loadWorker_ = new LoadRunner(mmstudio_, result.getAbsolutePath(), cbVirtualLoad_.isSelected());
+		loadWorker_ = new LoadRunner(mmstudio_, result.getAbsolutePath());
 		loadWorker_.addListener(this);
 		loadWorker_.start();
 
@@ -640,8 +627,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		runnerActive_ = true;
 		totalStoreTime_ = 0;
 		acqStartTime_ = 0;
-		acqWorker_ = new AcqRunner(core_, dataDir_, acqName_, cbTimeLapse_.isSelected(), timePoints_, channels_,
-				timeIntervalMs_, chunkSize_, cbDirectIo_.isSelected(), flushCycle_, cbFastExp_.isSelected());
+		acqWorker_ = new AcqRunner(core_, dataDir_, acqName_, cbTimeLapse_.isSelected(), timePoints_, channels_, timeIntervalMs_, chunkSize_, cbDirectIo_.isSelected(), flushCycle_, cbFastExp_.isSelected());
 		acqWorker_.addListener(this);
 		acqWorker_.start();
 
@@ -674,7 +660,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		try {
 			if(acqWorker_.isAlive())
 				acqWorker_.join();
-		}catch(InterruptedException e) {
+		} catch(InterruptedException e) {
 			mmstudio_.getLogManager().logError(e);
 		}
 		acqWorker_ = null;
@@ -776,8 +762,6 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		tbFlushCycle_.setEnabled(!runnerActive_ && !loadActive_);
 		cbDirectIo_.setEnabled(!runnerActive_ && !loadActive_);
 		cbFastExp_.setEnabled(!runnerActive_ && !loadActive_);
-		cbVirtualLoad_.setEnabled(!runnerActive_ && !loadActive_);
-		cbVirtualLoad_.setVisible(!loadActive_);
 		tbTimePoints_.setEnabled(!runnerActive_ && !loadActive_);
 		tbTimeInterval_.setEnabled(!runnerActive_&& !loadActive_ && cbTimeLapse_.isSelected());
 		cbTimeLapse_.setEnabled(!runnerActive_&& !loadActive_);
