@@ -4,6 +4,7 @@
 	<fail message="Micro-Manager Ant build files are currently designed for Windows only">
 		<condition><not><os family="winnt"/></not></condition>
 	</fail>
+	<property name="mm.build.mode" value="release"/>
 
 	<include file="buildscripts/buildprops.xml"/>
 	<import file="buildscripts/version.xml"/>
@@ -149,7 +150,7 @@
 			dir="${mm.installdir}"/>
 	</target>
 
-	<target name="package" description="Create installer from staged files (will NOT trigger build or stage)">
+	<target name="package" description="Create installer from staged files (will NOT trigger build or stage)" depends="set-versionstring">
 		<!-- Hack to allow the 'package' target to work in absence of
 		     closed-source device adapters -->
 		<if>
@@ -172,7 +173,7 @@
 		<exec dir="${mm.basedir}" executable="${mm.basedir}/../3rdparty/Inno_Setup_5/iscc.exe"
 			failonerror="true">
 			<arg value="/O${mm.distdir}"/>
-			<arg value="/F${mm.installer.basename}"/>
+			<arg value="/FMMSetup_Targa_${mm.versionstring}"/>
 			<arg file="${mm.basedir}/buildscripts/installer-${mm.architecture}.iss"/>
 		</exec>
 	</target>
