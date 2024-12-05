@@ -82,7 +82,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 
 	private final Studio mmstudio_;
 	private final CMMCore core_;
-	private final Vector<String> channels_;
+	private final Vector<ChannelInfo> channels_;
 	private String dataDir_;
 	private String acqName_;
 	private int timePoints_;
@@ -569,8 +569,12 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 					JSONObject chobj = jarr.getJSONObject(i);
 					if(chobj == null || !chobj.has(CFG_CHNAME))
 						continue;
-					channelsDataModel_.add(chobj.getString(CFG_CHNAME), chobj.optDouble(CFG_CHEXP, 10.0), chobj.optInt(CFG_CHINT, 1000));
-					channels_.add(chobj.getString(CFG_CHNAME));
+					double defaultTTLexp = 10.0;
+					int defaultTTLint = 500;
+					channelsDataModel_.add(chobj.getString(CFG_CHNAME),
+							chobj.optDouble(CFG_CHEXP, defaultTTLexp),
+							chobj.optInt(CFG_CHINT, defaultTTLint));
+					channels_.add(new ChannelInfo(chobj.getString(CFG_CHNAME), defaultTTLexp, defaultTTLint));
 				}
 			} catch(Exception e) {
 				mmstudio_.getLogManager().logError(e);
@@ -636,7 +640,8 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		runnerActive_ = true;
 		totalStoreTime_ = 0;
 		acqStartTime_ = 0;
-		acqWorker_ = new AcqRunner(core_, dataDir_, acqName_, cbTimeLapse_.isSelected(), timePoints_, channels_, timeIntervalMs_, chunkSize_, cbDirectIo_.isSelected(), flushCycle_, cbFastExp_.isSelected());
+		acqWorker_ = new AcqRunner(core_, dataDir_, acqName_, cbTimeLapse_.isSelected(), timePoints_, channels_,
+				timeIntervalMs_, chunkSize_, cbDirectIo_.isSelected(), flushCycle_, cbFastExp_.isSelected());
 		acqWorker_.addListener(this);
 		acqWorker_.start();
 
@@ -689,7 +694,6 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 			return;
 		}
 		String[] channelSource = core_.getAvailableConfigs(chgrp).toArray();
-		//String[] channelSource = { "CYAN", "GREEN", "RED", "UV", "TEAL" };
 		Vector<String> allchannels = new Vector<>();
 		for(String s : channelSource) {
 			if(channels_.contains(s))
@@ -705,13 +709,13 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		ChannelSelectionDlg wnd = new ChannelSelectionDlg(this, allchannels);
 		wnd.setVisible(true);
 
-		String schannel = wnd.getSelectedChannel();
-		if(schannel == null || schannel.isEmpty()) {
+		String channel = wnd.getSelectedChannel();
+		if(channel == null || channel.isEmpty()) {
 			statusInfo_.setText("No channel selected");
 			return;
 		}
-		channels_.add(schannel);
-		channelsDataModel_.add(schannel, wnd.getExposure(), wnd.getIntensity());
+		channels_.add(new ChannelInfo(channel, wnd.getExposure(), wnd.getIntensity()));
+		channelsDataModel_.add(channel, wnd.getExposure(), wnd.getIntensity());
 		updateAcqInfo();
 	}
 

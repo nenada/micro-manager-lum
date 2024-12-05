@@ -23,7 +23,7 @@ public class AcqRunner extends Thread {
 	private final CMMCore core_;
 	private final String location_;
 	private final String name_;
-	private final Vector<String> channels_;
+	private final Vector<ChannelInfo> channels_;
 	private final boolean timeLapse_;
 	private final int timePoints_;
 	private final int timeInterval_;
@@ -52,7 +52,15 @@ public class AcqRunner extends Thread {
 	 * @param flushcycle Flush cycle
 	 * @param fastexp Fast exp flag
 	 */
-	AcqRunner(CMMCore core, String location, String name, boolean timelapse, int timepoints, Vector<String> channels, int timeintervalms, int chunksize, boolean directio, int flushcycle, boolean fastexp) {
+	AcqRunner(CMMCore core, String location, String name,
+			  boolean timelapse,
+			  int timepoints,
+			  Vector<ChannelInfo> channels,
+			  int timeintervalms,
+			  int chunksize,
+			  boolean directio,
+			  int flushcycle,
+			  boolean fastexp) {
 		active_ = false;
 		core_ = core;
 		location_ = location;
@@ -83,18 +91,22 @@ public class AcqRunner extends Thread {
 			return;
 		}
 
-		String storedriver = core_.getStorageDevice();
+		String storageDriver = core_.getStorageDevice();
+		if (storageDriver.isEmpty()) {
+			notifyListenersFail("The configuration does not have any storage devices");
+			return;
+		}
 		int prevChunkSize;
 		int prevFlushCycle;
 		boolean prevDirectIo;
 		try {
 			// Store storage current driver configuration
-			prevFlushCycle = Integer.parseInt(core_.getProperty(storedriver, "FlushCycle"));
-			prevDirectIo = Integer.parseInt(core_.getProperty(storedriver, "DirectIO")) != 0;
-			prevChunkSize = Integer.parseInt(core_.getProperty(storedriver, "ChunkSize"));
+			prevFlushCycle = Integer.parseInt(core_.getProperty(storageDriver, "FlushCycle"));
+			prevDirectIo = Integer.parseInt(core_.getProperty(storageDriver, "DirectIO")) != 0;
+			prevChunkSize = Integer.parseInt(core_.getProperty(storageDriver, "ChunkSize"));
 
-			// Apply selected storage driver configration
-			setDriverConfig(storedriver, chunkSize_, directIo_, flushCycle_);
+			// Apply selected storage driver configuration
+			setDriverConfig(storageDriver, chunkSize_, directIo_, flushCycle_);
 
 			// Create the dataset
 			LongVector shape = new LongVector();
@@ -113,6 +125,13 @@ public class AcqRunner extends Thread {
 			String chGroup = core_.getChannelGroup();
 			String currentChannel = chGroup.isEmpty() ? "" : core_.getCurrentConfig(chGroup);
 			String readoutMode = core_.getCurrentConfig(READOUT_CONFIG_GROUP);
+
+			// check if TTL exposures are within the limits
+			for (ChannelInfo channel : channels_) {
+				if (channel.ttlExposureMs < 0.001 || channel.ttlExposureMs > exposureMs) {
+					throw new Exception("TTL exposure time must be between 0.001 ms and camera exposure time");
+				}
+			}
 
 			// Acquire images
 			String error = "";
@@ -137,7 +156,7 @@ public class AcqRunner extends Thread {
 				core_.setExposure(exposureMs);
 			if(!readoutMode.equals(core_.getCurrentConfig(READOUT_CONFIG_GROUP)))
 				core_.setConfig(READOUT_CONFIG_GROUP, readoutMode);
-			setDriverConfig(storedriver, prevChunkSize, prevDirectIo, prevFlushCycle);
+			setDriverConfig(storageDriver, prevChunkSize, prevDirectIo, prevFlushCycle);
 
 			// Notify that the acquisition is complete
 			if(error.isEmpty())
@@ -173,8 +192,8 @@ public class AcqRunner extends Thread {
 		int numberOfSpecifiedChannels = channels_.size();
 		int numberOfChannels = channels_.isEmpty() ? 1 : numberOfSpecifiedChannels;
 		if (numberOfSpecifiedChannels == 1) {
-			core_.setConfig(core_.getChannelGroup(), channels_.get(0));
-			core_.waitForConfig(core_.getChannelGroup(), channels_.get(0));
+			core_.setConfig(core_.getChannelGroup(), channels_.get(0).name);
+			core_.waitForConfig(core_.getChannelGroup(), channels_.get(0).name);
 		}
 
 		// setup appropriate readout mode
@@ -183,7 +202,16 @@ public class AcqRunner extends Thread {
 		if(!currentConfig.equals(READOUT_STANDARD_CONFIG))
 			core_.setConfig(READOUT_CONFIG_GROUP, READOUT_STANDARD_CONFIG);
 
-      notifyListenersStarted();
+		// set exposures and intensities for all channels
+		for (int i = 0; i < numberOfSpecifiedChannels; i++) {
+			// set exposure
+			core_.setProperty(TTL_SWITCH_DEV_NAME, channels_.get(i).getExposureProperty(), channels_.get(i).ttlExposureMs);
+
+			// set intensity
+			core_.setProperty(TTL_SWITCH_DEV_NAME, channels_.get(i).getIntensityProperty(), channels_.get(i).intensity);
+		}
+
+      	notifyListenersStarted();
 		for(int j = 0; j < timePoints_; j++) {
 			long tpStart = System.nanoTime();
 			for(int k = 0; k < numberOfChannels; k++) {
@@ -194,8 +222,8 @@ public class AcqRunner extends Thread {
 				}
 				// switch to the next channel if we have more than one
 				if(numberOfSpecifiedChannels > 1) {
-					core_.setConfig(core_.getChannelGroup(), channels_.get(k));
-					core_.waitForConfig(core_.getChannelGroup(), channels_.get(k));
+					core_.setConfig(core_.getChannelGroup(), channels_.get(k).name);
+					core_.waitForConfig(core_.getChannelGroup(), channels_.get(k).name);
 				}
 
 				core_.snapImage();
@@ -224,14 +252,30 @@ public class AcqRunner extends Thread {
 		String currentReadout = core_.getCurrentConfig(READOUT_CONFIG_GROUP);
 
 		if (numberOfSpecifiedChannels == 1) {
+			// set exposure
+			core_.setProperty(TTL_SWITCH_DEV_NAME, channels_.get(0).getExposureProperty(), channels_.get(0).ttlExposureMs);
+
+			// set intensity
+			core_.setProperty(TTL_SWITCH_DEV_NAME, channels_.get(0).getIntensityProperty(), channels_.get(0).intensity);
+
 			// if we have only one channel we will set it before starting acquisition
 			core_.setConfig(READOUT_CONFIG_GROUP, fastExp_ ? READOUT_FAST_CONFIG : READOUT_STANDARD_CONFIG);
-			core_.setConfig(core_.getChannelGroup(), channels_.get(0));
-			core_.waitForConfig(core_.getChannelGroup(), channels_.get(0));
+			core_.setConfig(core_.getChannelGroup(), channels_.get(0).name);
+			core_.waitForConfig(core_.getChannelGroup(), channels_.get(0).name);
+
 		} else if (numberOfSpecifiedChannels > 1) {
 			// if more than one channel we must use standard readout mode...
 			if (!currentReadout.equals(READOUT_STANDARD_CONFIG))
 				core_.setConfig(READOUT_CONFIG_GROUP, READOUT_STANDARD_CONFIG);
+
+			// set exposures and intensities for all channels
+			for (int i = 0; i < numberOfSpecifiedChannels; i++) {
+				// set exposure
+				core_.setProperty(TTL_SWITCH_DEV_NAME, channels_.get(i).getExposureProperty(), channels_.get(i).ttlExposureMs);
+
+				// set intensity
+				core_.setProperty(TTL_SWITCH_DEV_NAME, channels_.get(i).getIntensityProperty(), channels_.get(i).intensity);
+			}
 
 			// ...and set the channel sequence for the TTL switch device
 			if (core_.hasProperty(TTL_SWITCH_DEV_NAME, TTL_SWITCH_PROP_SEQUENCE)) {
@@ -239,7 +283,7 @@ public class AcqRunner extends Thread {
 				// create a string with the sequence of channels
 				StringBuilder sequence = new StringBuilder();
 				for (int i = 0; i < numberOfSpecifiedChannels; i++) {
-					sequence.append(channels_.get(i)).append(" ");
+					sequence.append(channels_.get(i).name).append(" ");
 				}
 
 				// set the "Channel Sequence" property
@@ -248,14 +292,14 @@ public class AcqRunner extends Thread {
 				throw new Exception("Device " + TTL_SWITCH_DEV_NAME + " does not support property " + TTL_SWITCH_PROP_SEQUENCE);
 			}
 		}
-		int totalcbuff = core_.getBufferTotalCapacity();
+		int totalCircBuff = core_.getBufferTotalCapacity();
 
 		core_.startSequenceAcquisition(total_, 0.0, true);
 		notifyListenersStarted();
 		for(int j = 0; j < timePoints_; j++) {
 			buffFree_ = core_.getBufferFreeCapacity();
-			if(buffFree_ < totalcbuff / 10)
-				System.out.printf("\nWARNING!!! Low buffer space %d / %d\n\n", buffFree_, totalcbuff);
+			if(buffFree_ < totalCircBuff / 10)
+				System.out.printf("\nWARNING!!! Low buffer space %d / %d\n\n", buffFree_, totalCircBuff);
 
 			for(int k = 0; k < numberOfChannels; k++) {
 				if(core_.isBufferOverflowed()) {
