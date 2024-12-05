@@ -11,6 +11,7 @@ import java.awt.event.*;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.Vector;
 import java.util.prefs.Preferences;
 
@@ -59,6 +60,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	private final JButton startAcqButton_;
 	private final JButton stopAcqButton_;
 	private final JButton channelAddButton_;
+	private final JButton channelModifyButton_;
 	private final JButton channelRemoveButton_;
 	private final JButton channelUpButton_;
 	private final JButton channelDownButton_;
@@ -336,6 +338,16 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		layout.putConstraint(SpringLayout.WEST, channelAddButton_, 5, SpringLayout.EAST, listScroller);
 		layout.putConstraint(SpringLayout.NORTH, channelAddButton_, 0, SpringLayout.NORTH, listScroller);
 
+		channelModifyButton_ = new JButton("E");
+		channelModifyButton_.setToolTipText("Modify Channel");
+		channelModifyButton_.setMargin(new Insets(2, 5, 2, 5));
+		channelModifyButton_.setPreferredSize(new Dimension(48, 24));
+		channelModifyButton_.addActionListener((final ActionEvent e) -> modifyChannel());
+		channelModifyButton_.setEnabled(false);
+		contentPane.add(channelModifyButton_);
+		layout.putConstraint(SpringLayout.WEST, channelModifyButton_, 0, SpringLayout.WEST, channelAddButton_);
+		layout.putConstraint(SpringLayout.NORTH, channelModifyButton_, 5, SpringLayout.SOUTH, channelAddButton_);
+
 		// Add channels list command buttons -> REMOVE
 		channelRemoveButton_ = new JButton("-");
 		channelRemoveButton_.setToolTipText("Remove Channel");
@@ -345,7 +357,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		channelRemoveButton_.setEnabled(false);
 		contentPane.add(channelRemoveButton_);
 		layout.putConstraint(SpringLayout.WEST, channelRemoveButton_, 0, SpringLayout.WEST, channelAddButton_);
-		layout.putConstraint(SpringLayout.NORTH, channelRemoveButton_, 5, SpringLayout.SOUTH, channelAddButton_);
+		layout.putConstraint(SpringLayout.NORTH, channelRemoveButton_, 5, SpringLayout.SOUTH, channelModifyButton_);
 
 		// Add channels list command buttons -> MOVE UP
 		channelUpButton_ = new JButton("UP");
@@ -692,7 +704,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		}
 
 		// Show channel selection dialog
-		ChannelSelectionDlg wnd = new ChannelSelectionDlg(this, allchannels);
+		ChannelSelectionDlg wnd = new ChannelSelectionDlg(this, allchannels, null, null, null);
 		wnd.setVisible(true);
 
 		String channel = wnd.getSelectedChannel();
@@ -703,6 +715,30 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		channels_.add(new ChannelInfo(channel, wnd.getExposure(), wnd.getIntensity()));
 		channelsDataModel_.add(channel, wnd.getExposure(), wnd.getIntensity());
 		updateAcqInfo();
+	}
+
+	/**
+	 * Modify selected channel
+	 */
+	protected void modifyChannel() {
+		if(listChannels_.getSelectedRow() < 0 || listChannels_.getSelectedRow() >= channels_.size())
+			return;
+
+		int ind = listChannels_.getSelectedRow();
+		String chname = channelsDataModel_.getValueAt(ind, 0).toString();
+		double exp = (double)channelsDataModel_.getValueAt(ind, 1);
+		int intensity = (int)channelsDataModel_.getValueAt(ind, 2);
+
+		// Show channel selection dialog
+		ChannelSelectionDlg wnd = new ChannelSelectionDlg(this, null, chname, exp, intensity);
+		wnd.setVisible(true);
+
+		String channel = wnd.getSelectedChannel();
+		if(!Objects.equals(channel, chname)) {
+			statusInfo_.setText("No channel selected");
+			return;
+		}
+		channelsDataModel_.update(ind, chname, wnd.getExposure(), wnd.getIntensity());
 	}
 
 	/**
@@ -745,6 +781,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	protected void updateChannelCommands() {
 		int ind = listChannels_.getSelectedRow();
 		channelAddButton_.setEnabled(!runnerActive_ && !loadActive_);
+		channelModifyButton_.setEnabled(!runnerActive_ && !loadActive_ && listChannels_.getSelectedRow() >= 0 && !channels_.isEmpty());
 		channelRemoveButton_.setEnabled(!runnerActive_ && !loadActive_ && listChannels_.getSelectedRow() >= 0 && !channels_.isEmpty());
 		channelUpButton_.setEnabled(!runnerActive_ && !loadActive_ && listChannels_.getSelectedRow() > 0 && !channels_.isEmpty());
 		channelDownButton_.setEnabled(!runnerActive_ && !loadActive_ && listChannels_.getSelectedRow() >= 0 && listChannels_.getSelectedRow() < channels_.size() - 1);

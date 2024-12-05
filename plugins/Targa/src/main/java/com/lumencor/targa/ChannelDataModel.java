@@ -85,6 +85,34 @@ public class ChannelDataModel extends AbstractTableModel {
 	}
 
 	/**
+	 * Update row
+	 * @param rowIndex Row index
+	 * @param channel Channel name
+	 * @param exp TTL exposure
+	 * @param intensity Channel intensity
+	 */
+	public void update(int rowIndex, String channel, double exp, int intensity) {
+		if(rowIndex < 0 || rowIndex >= data_.size())
+			return;
+		List<Object> row = data_.get(rowIndex);
+		if(row == null)
+			return;
+		if(row.size() < 1)
+			row.add(channel);
+		else
+			row.set(0, channel);
+		if(row.size() < 2)
+			row.add(exp);
+		else
+			row.set(1, exp);
+		if(row.size() < 3)
+			row.add(intensity);
+		else
+			row.set(2, intensity);
+		SwingUtilities.invokeLater(this::fireTableDataChanged);
+	}
+
+	/**
 	 * Clear rows
 	 */
 	public void clear() {

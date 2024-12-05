@@ -18,16 +18,23 @@ public class ChannelSelectionDlg extends JDialog {
 	 * Class constructor
 	 * @param parent Parent window
 	 * @param achannels Available channels
+	 * @param vchannel Selected channel
+	 * @param vexp Selected exposure
+	 * @param vint Selected channel intensity
 	 */
-	ChannelSelectionDlg(JFrame parent, Vector<String> achannels) {
+	ChannelSelectionDlg(JFrame parent, Vector<String> achannels, String vchannel, Double vexp, Integer vint) {
 		super(parent, "Channel Selection", true);
-		intensity = 1000;
-		exposure = 10.0;
+		intensity = vint == null ? 1000 : vint;
+		exposure = vexp == null ? 10.0 : vexp;
 
 		setPreferredSize(new Dimension(500, 270));
 		setLocationRelativeTo(parent);
 		setLocation(parent.getLocation().x + 150, parent.getLocation().y + 120);
 		pack();
+
+		Vector<String> lchannels = achannels != null && !achannels.isEmpty() ? achannels : new Vector<>();
+		if(lchannels.isEmpty() && vchannel != null && !vchannel.isEmpty())
+			lchannels.add(vchannel);
 
 		// Set layout manager
 		SpringLayout layout = new SpringLayout();
@@ -42,7 +49,8 @@ public class ChannelSelectionDlg extends JDialog {
 		layout.putConstraint(SpringLayout.NORTH, labelChannels, 10, SpringLayout.NORTH, contentPane);
 
 		// Add channel dropdown
-		channelSelector_ = new JComboBox<>(achannels);
+		channelSelector_ = new JComboBox<>(lchannels);
+		channelSelector_.setEnabled(achannels != null && !achannels.isEmpty());
 		contentPane.add(channelSelector_);
 		layout.putConstraint(SpringLayout.WEST, channelSelector_, 10, SpringLayout.WEST, contentPane);
 		layout.putConstraint(SpringLayout.EAST, channelSelector_, -10, SpringLayout.EAST, contentPane);
@@ -55,7 +63,7 @@ public class ChannelSelectionDlg extends JDialog {
 		layout.putConstraint(SpringLayout.NORTH, labelExp, 10, SpringLayout.SOUTH, channelSelector_);
 
 		// Add exposure text box
-		tbExposure_ = new JSpinner(new SpinnerNumberModel(10, 1, 10000.0, 0.1));
+		tbExposure_ = new JSpinner(new SpinnerNumberModel(exposure, 1, 10000.0, 0.1));
 		tbExposure_.addChangeListener((ChangeEvent e) -> applySettingsFromUI());
 		tbExposure_.setEditor(new JSpinner.NumberEditor(tbExposure_));
 		contentPane.add(tbExposure_);
@@ -70,7 +78,7 @@ public class ChannelSelectionDlg extends JDialog {
 		layout.putConstraint(SpringLayout.NORTH, labelIntensity, 10, SpringLayout.SOUTH, labelExp);
 
 		// Add intensity text box
-		tbIntensity_ = new JSpinner(new SpinnerNumberModel(1000, 0, 1000, 1));
+		tbIntensity_ = new JSpinner(new SpinnerNumberModel(intensity, 0, 1000, 1));
 		tbIntensity_.addChangeListener((ChangeEvent e) -> applySettingsFromUI());
 		contentPane.add(tbIntensity_);
 		layout.putConstraint(SpringLayout.WEST, tbIntensity_, 150, SpringLayout.WEST, labelIntensity);
