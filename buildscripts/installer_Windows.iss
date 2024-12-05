@@ -76,9 +76,10 @@ Source: "..\..\3rdparty\Lumencor\Dover\Debug\SmartStageAxis.dll"; DestDir: "{app
 Source: "..\..\3rdparty\Lumencor\Dover\Debug\vciapi.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\3rdparty\Lumencor\Dover\Debug\vcinpl.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\3rdparty\CZI\acquire-zarr\bin\acquire-zarr.dll"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\targa-configs\Dover\SupportFolder\*"; DestDir: "{app}\SupportFolder"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\targa-configs\Dover\SupportFolder\*"; DestDir: "{app}\SupportFolder"; Flags: onlyifdoesntexist recursesubdirs createallsubdirs
 Source: "..\targa-configs\okolib\*"; DestDir: "{app}\okolib"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\targa-configs\targa.cfg"; DestDir: "{app}"; Flags: onlyifdoesntexist; Permissions: users-modify
+Source: "..\targa-scripts\MMStartup.bsh"; DestDir: "{app}"; Flags: onlyifdoesntexist; Permissions: users-modify
 ;; end Targa specific
 
 
