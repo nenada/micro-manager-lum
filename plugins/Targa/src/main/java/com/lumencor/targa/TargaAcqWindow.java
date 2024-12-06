@@ -130,7 +130,27 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		super.setResizable(false);
 		super.setPreferredSize(new Dimension(800, 620));
 		super.setBounds(400, 200, 800, 620);
+		super.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
 		super.pack();
+
+		// Add window event handlers
+		JFrame pframe = this;
+		super.addWindowListener(new WindowAdapter() {
+			public void windowClosing(WindowEvent e) {
+				if(loadActive_) {
+					// Just cancel load operation
+					cancelLoadAcquisition();
+					pframe.dispose();
+				} else if(runnerActive_) {
+					int res = JOptionPane.showConfirmDialog(pframe, "Are you sure that you wan't to close the window? Acquisition will be stopped", "Acquisition active", JOptionPane.YES_NO_OPTION);
+					if(res == JOptionPane.YES_OPTION) {
+						stopAcquisition();
+						pframe.dispose();
+					}
+				} else
+					pframe.dispose();
+			}
+		});
 
 		// Set layout manager
 		SpringLayout layout = new SpringLayout();
@@ -500,6 +520,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	 */
 	public void dispose() {
 		saveSettings();
+		super.dispose();
 	}
 
 	/**
