@@ -42,12 +42,10 @@ for (i=0; i<numberOfSites; i++) {
 	mmc.waitForDevice(xyStage);
 	xyMoveT = java.lang.System.currentTimeMillis() - startT;
 	print("\tXY move [ms]: " + xyMoveT);
-
 	stackTotalT = 0.0;
 	imageStackTotalT = 0.0;
-	for (f=0; f<zPos.length; f++) {
-		print("\t\tZ plane " + (f+1));
 
+	for (f=0; f<zPos.length; f++) {
 		startT = java.lang.System.currentTimeMillis();
 		mmc.setPosition(zStage, zPos[f]);
 		mmc.waitForDevice(zStage);
@@ -65,8 +63,11 @@ for (i=0; i<numberOfSites; i++) {
 		}
 		imageStackTotalT += imageTotalT;
 		print("\t\tImagex3 [ms]: " + imageTotalT);
-		print("\tstack [ms]: " + stackTotalT);
 	}
+	print("\tZ stack [ms]: " + stackTotalT);
+	print("\t=====");
+	print("\timaging [ms]: " + imageStackTotalT);
+	print("\tmotion [ms]: " + (xyMoveT + stackTotalT));
 	print("\tSite time [ms]: " + (imageStackTotalT + xyMoveT + stackTotalT));
 }
 
