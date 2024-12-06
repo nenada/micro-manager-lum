@@ -251,6 +251,11 @@ public class AcqRunner extends Thread {
 		int numberOfChannels = channels_.isEmpty() ? 1 : numberOfSpecifiedChannels;
 		String currentReadout = core_.getCurrentConfig(READOUT_CONFIG_GROUP);
 
+		if (channels_.isEmpty()) {
+			// if no channels specified, we are assuming one channel, so we can apply fast mode
+			core_.setConfig(READOUT_CONFIG_GROUP, fastExp_ ? READOUT_FAST_CONFIG : READOUT_STANDARD_CONFIG);
+		}
+
 		if (numberOfSpecifiedChannels == 1) {
 			// set exposure
 			core_.setProperty(TTL_SWITCH_DEV_NAME, channels_.get(0).getExposureProperty(), channels_.get(0).ttlExposureMs);
