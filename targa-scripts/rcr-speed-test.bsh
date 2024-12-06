@@ -1,0 +1,73 @@
+// Recursion baseline speed test
+
+numberOfSites = 10;
+//moveDistanceUm = 2500; // well pitch in the 1536 well plate
+cameraExposureMs = 1.0;
+colors = new String[] {"RED", "GREEN", "CYAN"};
+intensities = new int[] {500, 500, 700};
+ttlExposuresMs = new double[] {0.9, 0.9, 0.9};
+zPos = new double[] {0.0, -5.0, 5.0}; // TODO: snake
+ttlDevice = "TTLSwitch";
+xyStage = mmc.getXYStageDevice();
+zStage = mmc.getFocusDevice();
+
+// run xy stage in a 2.5 mm well pitch square
+xPos = new double[] {2500, 0.0, -2500, 0.0};
+yPos = new double[] {0.0, 2500, 0.0, -2500};
+
+// Program the Arduino
+startT = java.lang.System.currentTimeMillis();
+sequenceCmd = new java.lang.StringBuilder();
+for (i=0; i<colors.length; i++) {
+	sequenceCmd.append(colors[i]).append(" ");
+	mmc.setProperty(ttlDevice, colors[i] + "_Intensity", intensities[i]);
+	mmc.setProperty(ttlDevice, colors[i] + "_ExposureMs", ttlExposuresMs[i]);
+}
+mmc.setProperty(ttlDevice, "ChannelSequence", sequenceCmd.toString());
+progArdTime = java.lang.System.currentTimeMillis() - startT;
+print("Programming TTL sequence took [ms]: " + progArdTime);  
+
+// move stage and acquire images
+// TODO: save images to dataset on disk
+print("Starting the acquisition...");
+mmc.setXYPosition(xyStage, 0.0, 0.0);
+mmc.waitForDevice(xyStage);
+mmc.setExposure(cameraExposureMs);
+
+for (i=0; i<numberOfSites; i++) {
+	print("\nSite " + (i + 1));
+	// move to well
+	startT = java.lang.System.currentTimeMillis();
+	mmc.setXYPosition(xPos[i%4], yPos[i%4]);
+	mmc.waitForDevice(xyStage);
+	xyMoveT = java.lang.System.currentTimeMillis() - startT;
+	print("\tXY move [ms]: " + xyMoveT);
+
+	stackTotalT = 0.0;
+	imageStackTotalT = 0.0;
+	for (f=0; f<zPos.length; f++) {
+		print("\t\tZ plane " + (f+1));
+
+		startT = java.lang.System.currentTimeMillis();
+		mmc.setPosition(zStage, zPos[f]);
+		mmc.waitForDevice(zStage);
+		zMoveT = java.lang.System.currentTimeMillis() - startT;
+		print("\t\tZ move [ms]: " + zMoveT);
+		stackTotalT += zMoveT;
+	
+		// take images
+		imageTotalT = 0.0;
+		for (c=0; c<colors.length; c++) {
+			startT = java.lang.System.currentTimeMillis();
+			mmc.snapImage();
+			imageT = java.lang.System.currentTimeMillis() - startT;
+			imageTotalT += imageT;
+		}
+		imageStackTotalT += imageTotalT;
+		print("\t\tImagex3 [ms]: " + imageTotalT);
+		print("\tstack [ms]: " + stackTotalT);
+	}
+	print("\tSite time [ms]: " + (imageStackTotalT + xyMoveT + stackTotalT));
+}
+
+print("Done.");
