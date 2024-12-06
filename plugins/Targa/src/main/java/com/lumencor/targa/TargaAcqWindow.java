@@ -90,6 +90,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	private int flushCycle_;
 	private int chunkSize_;
 	private long acqStartTime_;
+	private long acqFirstImage_;
 	private double totalStoreTime_;
 	private boolean runnerActive_;
 	private boolean loadActive_;
@@ -110,6 +111,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		flushCycle_ = 0;
 		chunkSize_ = 0;
 		acqStartTime_ = 0;
+		acqFirstImage_ = 0;
 		coreInit_ = false;
 		runnerActive_ = false;
 		loadActive_ = false;
@@ -660,6 +662,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		runnerActive_ = true;
 		totalStoreTime_ = 0;
 		acqStartTime_ = 0;
+		acqFirstImage_ = 0;
 		acqWorker_ = new AcqRunner(core_, dataDir_, acqName_, cbTimeLapse_.isSelected(), timePoints_, channels_, timeIntervalMs_, chunkSize_, cbDirectIo_.isSelected(), flushCycle_, cbFastExp_.isSelected());
 		acqWorker_.addListener(this);
 		acqWorker_.start();
@@ -942,11 +945,11 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	 * Update acquisition elapsed time
 	 */
 	protected void updateAcqTime() {
-		acqStartTime_ = System.nanoTime();
+		long acqRunTime = System.nanoTime();
 		while(runnerActive_) {
 			try {
 				long currtime = System.nanoTime();
-				double tottimesec = (currtime - acqStartTime_) / 1000000000.0;
+				double tottimesec = (currtime - acqRunTime) / 1000000000.0;
 				int thours = (int)Math.floor(tottimesec / 3600.0);
 				int tmins = (int)Math.floor((tottimesec - thours * 3600.0) / 60.0);
 				int tsec = (int)Math.round(tottimesec - thours * 3600.0 - tmins * 60.0);
@@ -974,6 +977,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	 */
 	@Override
 	public void notifyAcqStarted() {
+		acqStartTime_ = System.nanoTime();
 	}
 
 	/**
@@ -999,15 +1003,20 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	 */
 	@Override
 	public void notifyAcqStatusUpdate(int curr, int total, Image image, int bufffree, int bufftotal, double storetimems) {
-		int perc = (int)Math.ceil(100.0 * (double)curr / total);
+		// Update start time after the first image is acquired
+		if(curr == 1)
+			acqFirstImage_ = System.nanoTime();
+
+		int perc = total == 0 ? 0 : (int)Math.ceil(100.0 * (double)curr / total);
 		progressBar_.setMaximum(total);
 		progressBar_.setValue(curr);
 		progressBar_.setString(String.format("%d / %d (%d%%)", curr, total, perc));
 
-		int buffperc = (int)Math.ceil(100.0 * (double)(bufftotal - bufffree) / bufftotal);
+		int bused = bufftotal >= bufffree ? bufftotal - bufffree : 0;
+		int buffperc = bufftotal == 0 ? 0 : (int)Math.ceil(100.0 * (double)bused / bufftotal);
 		cbuffCapacity_.setMaximum(bufftotal);
-		cbuffCapacity_.setValue(bufftotal - bufffree);
-		cbuffCapacity_.setString(String.format("%d / %d (%d%%)", bufftotal - bufffree, bufftotal, buffperc));
+		cbuffCapacity_.setValue(bused);
+		cbuffCapacity_.setString(String.format("%d / %d (%d%%)", bused, bufftotal, buffperc));
 
 		double cbuffmb = core_.getCircularBufferMemoryFootprint();
 		if(cbuffmb > 1024.0)
@@ -1022,7 +1031,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		double avgwritefps = avgwritetime == 0 ? 0 : 1000.0 / avgwritetime;
 		labelAcqWriteFps_.setText(String.format("Write frame rate: %.1f FPS", avgwritefps));
 
-		double totalTime = (System.nanoTime() - acqStartTime_) / 1000000000.0;
+		double totalTime = (System.nanoTime() - acqFirstImage_) / 1000000000.0;
 		double avgstorefps = totalTime == 0 ? 0 : (double)curr / totalTime;
 		labelAcqStoreFps_.setText(String.format("Storage throughput: %.1f FPS", avgstorefps));
 
