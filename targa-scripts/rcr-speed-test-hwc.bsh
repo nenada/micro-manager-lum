@@ -1,0 +1,102 @@
+// Recursion speed test with hardware control
+// The script sends commands to arduino to switch channels and drive the camera
+
+numberOfSites = 10;
+cameraExposureMs = 1.0;
+colors = new String[] {"RED", "GREEN", "CYAN"};
+intensities = new int[] {500, 500, 700};
+ttlExposuresMs = new double[] {0.9, 0.9, 0.9};
+zPos = new double[] {0.0, -5.0, 5.0}; // TODO: snake
+ttlDevice = "TTLSwitch";
+xyStage = mmc.getXYStageDevice();
+zStage = mmc.getFocusDevice();
+camera = mmc.getCameraDevice();
+
+// run xy stage in a 2.25 mm well pitch square
+xPos = new double[] {2250, 0.0, -2250, 0.0};
+yPos = new double[] {0.0, 2250, 0.0, -2250};
+
+// Program the Arduino
+startT = java.lang.System.currentTimeMillis();
+sequenceCmd = new java.lang.StringBuilder();
+for (i=0; i<colors.length; i++) {
+	sequenceCmd.append(colors[i]).append(" ");
+	mmc.setProperty(ttlDevice, colors[i] + "_Intensity", intensities[i]);
+	mmc.setProperty(ttlDevice, colors[i] + "_ExposureMs", ttlExposuresMs[i]);
+}
+mmc.setProperty(ttlDevice, "ChannelSequence", sequenceCmd.toString());
+progArdTime = java.lang.System.currentTimeMillis() - startT;
+print("Programming TTL sequence took [ms]: " + progArdTime);  
+
+// move stage and acquire images
+// TODO: save images to dataset on disk
+print("Starting the acquisition...");
+mmc.setXYPosition(xyStage, 0.0, 0.0);
+mmc.waitForDevice(xyStage);
+mmc.setExposure(cameraExposureMs);
+
+// set the camera in standard mode (gloabl shutter)
+mmc.setConfig("Readout", "Standard");
+
+// set the camera in hardware trigger mode
+mmc.setProperty(camera, "TriggerMode", "External");
+
+// start the camera
+mmc.clearCircularBuffer();
+mmc.startContinuousSequenceAcquisition(0);
+
+// iterate over sites
+for (i=0; i<numberOfSites; i++) {
+	print("\nSite " + (i + 1));
+	// move to well
+	startT = java.lang.System.currentTimeMillis();
+	mmc.setXYPosition(xPos[i%4], yPos[i%4]);
+	mmc.waitForDevice(xyStage);
+	xyMoveT = java.lang.System.currentTimeMillis() - startT;
+	print("\tXY move [ms]: " + xyMoveT);
+	stackTotalT = 0.0;
+	imageStackTotalT = 0.0;
+
+	for (f=0; f<zPos.length; f++) {
+		startT = java.lang.System.currentTimeMillis();
+		mmc.setPosition(zStage, zPos[f]);
+		mmc.waitForDevice(zStage);
+		zMoveT = java.lang.System.currentTimeMillis() - startT;
+		print("\t\tZ move [ms]: " + zMoveT);
+		stackTotalT += zMoveT;
+	
+		// take images
+        startT = java.lang.System.currentTimeMillis();
+		imageTotalT = 0.0;
+        mmc.setProperty(ttlDevice, "RunSequence", "1");
+
+        // wait for the images to be acquired
+        int retries = 0;
+        int maxRetries = 10;
+        while (mmc.getRemainingImageCount() < channels.length && retries < maxRetries) {
+            mmc.sleep(10);
+            retries++
+        }
+        if (retries >= maxRetries) {
+            print("Error: timeout waiting for images");
+            break;
+        }
+
+        // retrieve images
+		for (c=0; c<colors.length; c++) {
+			img = mmc.popNextImage(image);
+            // TODO: save image to disk
+		}
+		imageStackTotalT = java.lang.System.currentTimeMillis() - startT;;
+		print("\t\tImagex3 [ms]: " + imageTotalT);
+	}
+	print("\tZ stack [ms]: " + stackTotalT);
+	print("\t=====");
+	print("\timaging [ms]: " + imageStackTotalT);
+	print("\tmotion [ms]: " + (xyMoveT + stackTotalT));
+	print("\tSite time [ms]: " + (imageStackTotalT + xyMoveT + stackTotalT));
+}
+
+mmc.stopSequenceAcquisition();
+
+print("Done.");
