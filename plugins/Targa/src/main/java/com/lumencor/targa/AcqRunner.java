@@ -118,7 +118,6 @@ public class AcqRunner extends Thread {
 			StorageDataType pixType = bpp == 2 ? StorageDataType.StorageDataType_GRAY16 : (bpp == 1 ? StorageDataType.StorageDataType_GRAY8 : StorageDataType.StorageDataType_UNKNOWN);
 			if(pixType == StorageDataType.StorageDataType_UNKNOWN)
 				throw new Exception("Unsupported pixel depth of " + bpp + " bytes.");
-			String handle = core_.createDataset(location_, name_, shape, pixType, "");
 
 			// save the initial state
 			double exposureMs = core_.getExposure();
@@ -132,6 +131,8 @@ public class AcqRunner extends Thread {
 					throw new Exception("TTL exposure time must be between 0.001 ms and camera exposure time");
 				}
 			}
+			
+			String handle = core_.createDataset(location_, name_, shape, pixType, "");
 
 			// Acquire images
 			String error = "";
