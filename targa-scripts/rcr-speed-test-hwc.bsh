@@ -39,7 +39,7 @@ mmc.setExposure(cameraExposureMs);
 mmc.setConfig("Readout", "Standard");
 
 // set the camera in hardware trigger mode
-mmc.setProperty(camera, "TriggerMode", "External");
+mmc.setProperty(camera, "TRIGGER SOURCE", "EXTERNAL");
 
 // start the camera
 mmc.clearCircularBuffer();
@@ -98,5 +98,7 @@ for (i=0; i<numberOfSites; i++) {
 }
 
 mmc.stopSequenceAcquisition();
+mmc.setProperty(camera, "TRIGGER SOURCE", "SOFTWARE");
+
 
 print("Done.");
