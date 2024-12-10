@@ -65,26 +65,35 @@ for (i=0; i<numberOfSites; i++) {
 		// take images
       startTImg = java.lang.System.currentTimeMillis();
       mmc.setProperty(ttlDevice, "RunSequence", "1"); // this sends GO cammand to TTLSwitch
+      arduinoTime = java.lang.System.currentTimeMillis() - startTImg;
+      print("\t\tArduino GO [ms]: " + arduinoTime);
 
       // wait for the images to be acquired
+      startTImg = java.lang.System.currentTimeMillis();
       int retries = 0;
       int maxRetries = 10;
       while (mmc.getRemainingImageCount() < colors.length && retries < maxRetries) {
-         mmc.sleep(10);
+         mmc.sleep(1);
          retries++;
       }
       if (retries >= maxRetries) {
       	print("Error: timeout waiting for images");
          break;
       }
+      imageWaitTime = java.lang.System.currentTimeMillis() - startTImg;
+      print("\t\tWait for images [ms]: " + imageWaitTime);
 
       // retrieve images
+      startTImg = java.lang.System.currentTimeMillis();
 		for (c=0; c<colors.length; c++) {
 			img = mmc.popNextImage();
             // TODO: save image to disk
 		}
-		imageStackTotalT = java.lang.System.currentTimeMillis() - startTImg;;
-		print("\t\tImagex3 [ms]: " + imageStackTotalT);
+		imageRetrieveTime = java.lang.System.currentTimeMillis() - startTImg;
+		print("\t\tRetrieve [ms]: " + imageRetrieveTime);
+		imageStackT = imageRetrieveTime + arduinoTime + imageWaitTime;
+		print("\t\tImagex3 [ms]: " + imageStackT);
+		imageStackTotalT += imageStackT;
 	}
 	print("\tZ stack [ms]: " + stackTotalT);
 	print("\t=====");
