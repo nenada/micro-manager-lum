@@ -1,7 +1,7 @@
 // Recursion baseline speed test
 
 numberOfSites = 10;
-//moveDistanceUm = 2500; // well pitch in the 1536 well plate
+//moveDistanceUm = 2250; // well pitch in the 1536 well plate
 cameraExposureMs = 1.0;
 colors = new String[] {"RED", "GREEN", "CYAN"};
 intensities = new int[] {500, 500, 700};
@@ -11,7 +11,7 @@ ttlDevice = "TTLSwitch";
 xyStage = mmc.getXYStageDevice();
 zStage = mmc.getFocusDevice();
 
-// run xy stage in a 2.5 mm well pitch square
+// run xy stage in a 2.25 mm well pitch square
 xPos = new double[] {2250, 0.0, -2250, 0.0};
 yPos = new double[] {0.0, 2250, 0.0, -2250};
 
