@@ -57,6 +57,7 @@ mmc.clearCircularBuffer();
 mmc.startContinuousSequenceAcquisition(0);
 
 // iterate over sites
+totalSiteTime = 0.0;
 for (i=0; i<numberOfSites; i++) {
 	print("\nSite " + (i + 1));
 	// move to well
@@ -108,12 +109,15 @@ for (i=0; i<numberOfSites; i++) {
 	print("\t=====");
 	print("\timaging [ms]: " + imageStackTotalT);
 	print("\tmotion [ms]: " + (xyMoveT + stackTotalT));
-	print("\tSite time [ms]: " + (imageStackTotalT + xyMoveT + stackTotalT));
+	siteTime = imageStackTotalT + xyMoveT + stackTotalT;
+	print("\tSite time [ms]: " + siteTime);
+	totalSiteTime += siteTime;
+	
 }
 
 print("Please wait, stopping the camera (may take a minute)...");
 mmc.stopSequenceAcquisition();
 setStandardMode(camera);
-
+print("Average site time [ms] :" + totalSiteTime/numberOfSites);
 
 print("Done.");
