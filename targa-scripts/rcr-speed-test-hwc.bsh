@@ -2,6 +2,19 @@
 // The script sends commands to arduino to switch channels and drive the camera
 // Assumes we are using the configuration "targa-rcr.cfg"
 
+void setSequenceMode(String cam) {
+	mmc.setProperty(cam, "TRIGGER SOURCE", "EXTERNAL");
+	mmc.setProperty(cam, "TRIGGER ACTIVE", "LEVEL");
+	mmc.setProperty(cam, "TriggerPolarity", "POSITIVE");
+}
+
+void setStandardMode(String cam) {
+	mmc.setProperty(cam, "TRIGGER SOURCE", "SOFTWARE");
+	mmc.setProperty(cam, "TRIGGER ACTIVE", "EDGE");
+	mmc.setProperty(cam, "TriggerPolarity", "NEGATIVE");
+}
+
+
 numberOfSites = 10;
 cameraExposureMs = 1.0;
 colors = new String[] {"RED", "GREEN", "CYAN"};
@@ -36,7 +49,8 @@ mmc.setXYPosition(xyStage, 0.0, 0.0);
 mmc.waitForDevice(xyStage);
 
 // set the camera in sequence mode with external exposure control
-mmc.setConfig("CameraMode", "Sequence");
+// mmc.setConfig("CameraMode", "Sequence");
+setSequenceMode(camera);
 
 // start the camera
 mmc.clearCircularBuffer();
@@ -72,18 +86,17 @@ for (i=0; i<numberOfSites; i++) {
       startTImg = java.lang.System.currentTimeMillis();
 		for (c=0; c<colors.length; c++) {
 			int retries = 0;
-      	int maxRetries = 10;
-      	while (mmc.getRemainingImageCount() == 0 && retries < maxRetries) {
+      	int maxRetries = 100;
+      	while ((mmc.getRemainingImageCount() == 0) && (retries < maxRetries)) {
          	mmc.sleep(1);
          	retries++;
       	}
       	if (retries >= maxRetries) {
       		print("Error: timeout waiting for images");
-         	break;
-      	}
-
-			img = mmc.popNextImage();
+      	} else {
+				img = mmc.popNextImage();
             // TODO: save image to disk
+      	}
 		}
 		imageRetrieveTime = java.lang.System.currentTimeMillis() - startTImg;
 		print("\t\tRetrieve [ms]: " + imageRetrieveTime);
@@ -100,7 +113,7 @@ for (i=0; i<numberOfSites; i++) {
 
 print("Please wait, stopping the camera (may take a minute)...");
 mmc.stopSequenceAcquisition();
-mmc.setConfig("CameraMode", "Standard");
+setStandardMode(camera);
 
 
 print("Done.");
