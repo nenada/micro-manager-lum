@@ -10,7 +10,6 @@ import java.awt.*;
 import java.awt.event.*;
 import java.io.File;
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.Objects;
 import java.util.Vector;
 import java.util.prefs.Preferences;
@@ -44,6 +43,9 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	private final static String CFG_CHNAME = "name";
 	private final static String CFG_CHEXP = "exposure";
 	private final static String CFG_CHINT = "intensity";
+	private final static String CFG_WNDW = "WndWidth";
+	private final static String CFG_WNDH = "WndHeight";
+	private final static String CFG_LOGVIEWDIVIDER = "LogDivider";
 
 	private final JTextField tbLocation_;
 	private final JTextField tbName_;
@@ -80,6 +82,9 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	private final JLabel labelAcqWriteFps_;
 	private final JProgressBar progressBar_;
 	private final JProgressBar cbuffCapacity_;
+	private final JSplitPane logSplitPane_;
+	private final JPanel mainPanel_;
+	private final LogView logView_;
 
 	private final Studio mmstudio_;
 	private final CMMCore core_;
@@ -118,7 +123,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		runnerActive_ = false;
 		loadActive_ = false;
 		mmstudio_ = studio;
-		core_ = studio.getCMMCore();
+		core_ = studio != null ? studio.getCMMCore() : null;
 		channels_ = new Vector<>();
 		channelsDataModel_ = new ChannelDataModel();
 
@@ -131,9 +136,10 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		});
 		super.setTitle("Targa Acquisition " + TargaPlugin.VERSION_INFO);
 		super.setIconImage(Toolkit.getDefaultToolkit().getImage(getClass().getResource("/org/micromanager/icons/microscope.gif")));
-		super.setResizable(false);
-		super.setPreferredSize(new Dimension(800, 750));
-		super.setBounds(400, 200, 800, 620);
+		super.setResizable(true);
+		super.setMinimumSize(new Dimension(800, 850));
+		super.setPreferredSize(new Dimension(800, 1050));
+		super.setBounds(400, 200, 800, 1050);
 		super.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
 		super.pack();
 
@@ -156,11 +162,6 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 			}
 		});
 
-		// Set layout manager
-		SpringLayout layout = new SpringLayout();
-		Container contentPane = super.getContentPane();
-		contentPane.setLayout(layout);
-
 		// Set common event handlers
 		FocusListener focusListener = new FocusListener() {
 			@Override
@@ -172,67 +173,72 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 			}
 		};
 
-		// Add UI components
-		// Add status bar
-		SpringLayout statusbarlayout = new SpringLayout();
-		JPanel statusPanel = new JPanel();
-		statusPanel.setBorder(new BevelBorder(BevelBorder.LOWERED));
-		statusPanel.setPreferredSize(new Dimension(contentPane.getWidth(), 25));
-		statusPanel.setLayout(statusbarlayout);
-		contentPane.add(statusPanel);
-		layout.putConstraint(SpringLayout.WEST, statusPanel, 0, SpringLayout.WEST, contentPane);
-		layout.putConstraint(SpringLayout.EAST, statusPanel, 0, SpringLayout.EAST, contentPane);
-		layout.putConstraint(SpringLayout.SOUTH, statusPanel, 0, SpringLayout.SOUTH, contentPane);
+		// Set root container layout
+		BorderLayout borderLayout = new BorderLayout();
+		getContentPane().setLayout(borderLayout);
 
-		statusInfo_ = new JLabel("Ready");
-		statusInfo_.setHorizontalAlignment(SwingConstants.LEFT);
-		statusPanel.add(statusInfo_);
-		statusbarlayout.putConstraint(SpringLayout.WEST, statusInfo_, 10, SpringLayout.WEST, statusPanel);
-		statusbarlayout.putConstraint(SpringLayout.SOUTH, statusInfo_, -1, SpringLayout.SOUTH, statusPanel);
+		// Main panel
+		SpringLayout layout = new SpringLayout();
+		mainPanel_ = new JPanel();
+		mainPanel_.setPreferredSize(new Dimension(780, 600));
+		mainPanel_.setLayout(layout);
 
+		// Log view
+		logView_ = new LogView();
+
+		// Log view split panel
+		logSplitPane_ = new JSplitPane(JSplitPane.VERTICAL_SPLIT, mainPanel_, logView_);
+		logSplitPane_.setContinuousLayout(true);
+		logSplitPane_.setResizeWeight(0.0);
+		logSplitPane_.setOneTouchExpandable(true);
+		logSplitPane_.setDividerLocation(0.8d);
+		logSplitPane_.setContinuousLayout(true);
+		getContentPane().add(logSplitPane_, BorderLayout.CENTER);
+
+		// Add main panel UI components
 		// Add acquisition location label
 		final JLabel labelDir = new JLabel("Project Directory");
-		contentPane.add(labelDir);
-		layout.putConstraint(SpringLayout.WEST, labelDir, 20, SpringLayout.WEST, contentPane);
-		layout.putConstraint(SpringLayout.NORTH, labelDir, 12, SpringLayout.NORTH, contentPane);
+		mainPanel_.add(labelDir);
+		layout.putConstraint(SpringLayout.WEST, labelDir, 20, SpringLayout.WEST, mainPanel_);
+		layout.putConstraint(SpringLayout.NORTH, labelDir, 12, SpringLayout.NORTH, mainPanel_);
 
 		// Add acquisition location field
 		tbLocation_ = new JTextField();
 		tbLocation_.addFocusListener(focusListener);
-		contentPane.add(tbLocation_);
-		layout.putConstraint(SpringLayout.WEST, tbLocation_, 170, SpringLayout.WEST, contentPane);
-		layout.putConstraint(SpringLayout.EAST, tbLocation_, -50, SpringLayout.EAST, contentPane);
-		layout.putConstraint(SpringLayout.NORTH, tbLocation_, 10, SpringLayout.NORTH, contentPane);
+		mainPanel_.add(tbLocation_);
+		layout.putConstraint(SpringLayout.WEST, tbLocation_, 170, SpringLayout.WEST, mainPanel_);
+		layout.putConstraint(SpringLayout.EAST, tbLocation_, -50, SpringLayout.EAST, mainPanel_);
+		layout.putConstraint(SpringLayout.NORTH, tbLocation_, 10, SpringLayout.NORTH, mainPanel_);
 
 		chooseLocationButton_ = new JButton("...");
 		chooseLocationButton_.setToolTipText("Browse");
 		chooseLocationButton_.setMargin(new Insets(2, 5, 2, 5));
 		chooseLocationButton_.setFont(new Font("Dialog", Font.PLAIN, 12));
 		chooseLocationButton_.addActionListener((final ActionEvent e) -> setSaveLocation());
-		contentPane.add(chooseLocationButton_);
+		mainPanel_.add(chooseLocationButton_);
 		layout.putConstraint(SpringLayout.WEST, chooseLocationButton_, 5, SpringLayout.EAST, tbLocation_);
 		layout.putConstraint(SpringLayout.NORTH, chooseLocationButton_, 2, SpringLayout.NORTH, tbLocation_);
 
 		// Add acquisition name label
 		final JLabel labelName = new JLabel("File Name");
-		contentPane.add(labelName);
-		layout.putConstraint(SpringLayout.WEST, labelName, 20, SpringLayout.WEST, contentPane);
-		layout.putConstraint(SpringLayout.NORTH, labelName, 42, SpringLayout.NORTH, contentPane);
+		mainPanel_.add(labelName);
+		layout.putConstraint(SpringLayout.WEST, labelName, 20, SpringLayout.WEST, mainPanel_);
+		layout.putConstraint(SpringLayout.NORTH, labelName, 42, SpringLayout.NORTH, mainPanel_);
 
 		// Add acquisition name field
 		tbName_ = new JTextField();
 		tbName_.addFocusListener(focusListener);
-		contentPane.add(tbName_);
+		mainPanel_.add(tbName_);
 		layout.putConstraint(SpringLayout.WEST, tbName_, 0, SpringLayout.WEST, tbLocation_);
 		layout.putConstraint(SpringLayout.EAST, tbName_, 0, SpringLayout.EAST, tbLocation_);
-		layout.putConstraint(SpringLayout.NORTH, tbName_, 40, SpringLayout.NORTH, contentPane);
+		layout.putConstraint(SpringLayout.NORTH, tbName_, 40, SpringLayout.NORTH, mainPanel_);
 
 		// Add load acquisition button
 		loadButton_ = new JButton("Load Acquisition");
 		loadButton_.setToolTipText("Load Existing Acquisition Data");
 		loadButton_.setMargin(new Insets(5, 15, 5, 15));
 		loadButton_.addActionListener((final ActionEvent e) -> loadAcquisition());
-		contentPane.add(loadButton_);
+		mainPanel_.add(loadButton_);
 		layout.putConstraint(SpringLayout.EAST, loadButton_, 0, SpringLayout.EAST, tbName_);
 		layout.putConstraint(SpringLayout.NORTH, loadButton_, 10, SpringLayout.SOUTH, tbName_);
 
@@ -242,21 +248,21 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		cancelLoadButton_.setMargin(new Insets(5, 15, 5, 15));
 		cancelLoadButton_.addActionListener((final ActionEvent e) -> cancelLoadAcquisition());
 		cancelLoadButton_.setVisible(false);
-		contentPane.add(cancelLoadButton_);
+		mainPanel_.add(cancelLoadButton_);
 		layout.putConstraint(SpringLayout.EAST, cancelLoadButton_, 0, SpringLayout.EAST, tbName_);
 		layout.putConstraint(SpringLayout.NORTH, cancelLoadButton_, 10, SpringLayout.SOUTH, tbName_);
 
 		// === FIRST ROW ========================================
 		// Add chunk size label
 		final JLabel labelChunkSize = new JLabel("Chunk size");
-		contentPane.add(labelChunkSize);
-		layout.putConstraint(SpringLayout.WEST, labelChunkSize, 20, SpringLayout.WEST, contentPane);
-		layout.putConstraint(SpringLayout.NORTH, labelChunkSize, 142, SpringLayout.NORTH, contentPane);
+		mainPanel_.add(labelChunkSize);
+		layout.putConstraint(SpringLayout.WEST, labelChunkSize, 20, SpringLayout.WEST, mainPanel_);
+		layout.putConstraint(SpringLayout.NORTH, labelChunkSize, 142, SpringLayout.NORTH, mainPanel_);
 
 		// Add chunk size text box
 		tbChunkSize_ = new JSpinner(new SpinnerNumberModel(0, 0, null, 1));
 		tbChunkSize_.addChangeListener((ChangeEvent e) -> applySettingsFromUI());
-		contentPane.add(tbChunkSize_);
+		mainPanel_.add(tbChunkSize_);
 		layout.putConstraint(SpringLayout.WEST, tbChunkSize_, 0, SpringLayout.WEST, tbLocation_);
 		layout.putConstraint(SpringLayout.EAST, tbChunkSize_, 80, SpringLayout.WEST, tbChunkSize_);
 		layout.putConstraint(SpringLayout.NORTH, tbChunkSize_, -2, SpringLayout.NORTH, labelChunkSize);
@@ -265,36 +271,36 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		cbDirectIo_ = new JCheckBox("Direct I/O");
 		cbDirectIo_.setHorizontalTextPosition(SwingConstants.LEADING);
 		cbDirectIo_.setHorizontalAlignment(SwingConstants.RIGHT);
-		contentPane.add(cbDirectIo_);
+		mainPanel_.add(cbDirectIo_);
 		layout.putConstraint(SpringLayout.WEST, cbDirectIo_, 20, SpringLayout.EAST, tbChunkSize_);
 		layout.putConstraint(SpringLayout.EAST, cbDirectIo_, 150, SpringLayout.WEST, cbDirectIo_);
 		layout.putConstraint(SpringLayout.NORTH, cbDirectIo_, -3, SpringLayout.NORTH, labelChunkSize);
 
 		// Add flush cycle label
 		final JLabel labelFlushCycle = new JLabel("Flush Cycle");
-		contentPane.add(labelFlushCycle);
+		mainPanel_.add(labelFlushCycle);
 		layout.putConstraint(SpringLayout.WEST, labelFlushCycle, 100, SpringLayout.EAST, cbDirectIo_);
 		layout.putConstraint(SpringLayout.NORTH, labelFlushCycle, 0, SpringLayout.NORTH, labelChunkSize);
 
 		// Add flush cycle text box
 		tbFlushCycle_ = new JSpinner(new SpinnerNumberModel(0, 0, null, 1));
 		tbFlushCycle_.addChangeListener((ChangeEvent e) -> applySettingsFromUI());
-		contentPane.add(tbFlushCycle_);
-		layout.putConstraint(SpringLayout.EAST, tbFlushCycle_, 0, SpringLayout.EAST, loadButton_);
-		layout.putConstraint(SpringLayout.WEST, tbFlushCycle_, -80, SpringLayout.EAST, tbFlushCycle_);
+		mainPanel_.add(tbFlushCycle_);
+		layout.putConstraint(SpringLayout.WEST, tbFlushCycle_, 50, SpringLayout.EAST, labelFlushCycle);
+		layout.putConstraint(SpringLayout.EAST, tbFlushCycle_, 80, SpringLayout.WEST, tbFlushCycle_);
 		layout.putConstraint(SpringLayout.NORTH, tbFlushCycle_, -2, SpringLayout.NORTH, labelChunkSize);
 
 		// === SECOND ROW ========================================
 		// Add timepoints label
 		final JLabel labelTimepoints = new JLabel("Timepoints");
-		contentPane.add(labelTimepoints);
-		layout.putConstraint(SpringLayout.WEST, labelTimepoints, 20, SpringLayout.WEST, contentPane);
+		mainPanel_.add(labelTimepoints);
+		layout.putConstraint(SpringLayout.WEST, labelTimepoints, 20, SpringLayout.WEST, mainPanel_);
 		layout.putConstraint(SpringLayout.NORTH, labelTimepoints, 20, SpringLayout.SOUTH, labelChunkSize);
 
 		// Add timepoints count text box
 		tbTimePoints_ = new JSpinner(new SpinnerNumberModel(5, 1, null, 1));
 		tbTimePoints_.addChangeListener((ChangeEvent e) -> applySettingsFromUI());
-		contentPane.add(tbTimePoints_);
+		mainPanel_.add(tbTimePoints_);
 		layout.putConstraint(SpringLayout.WEST, tbTimePoints_, 0, SpringLayout.WEST, tbLocation_);
 		layout.putConstraint(SpringLayout.EAST, tbTimePoints_, 80, SpringLayout.WEST, tbTimePoints_);
 		layout.putConstraint(SpringLayout.NORTH, tbTimePoints_, -2, SpringLayout.NORTH, labelTimepoints);
@@ -307,20 +313,20 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		layout.putConstraint(SpringLayout.WEST, cbFastExp_, 0, SpringLayout.WEST, cbDirectIo_);
 		layout.putConstraint(SpringLayout.EAST, cbFastExp_, 0, SpringLayout.EAST, cbDirectIo_);
 		layout.putConstraint(SpringLayout.NORTH, cbFastExp_, -3, SpringLayout.NORTH, labelTimepoints);
-		contentPane.add(cbFastExp_);
+		mainPanel_.add(cbFastExp_);
 
 		// === THIRD ROW ========================================
 		// Add time interval label
 		final JLabel labelTimeInterval = new JLabel("Interval [ms]");
-		contentPane.add(labelTimeInterval);
-		layout.putConstraint(SpringLayout.WEST, labelTimeInterval, 20, SpringLayout.WEST, contentPane);
+		mainPanel_.add(labelTimeInterval);
+		layout.putConstraint(SpringLayout.WEST, labelTimeInterval, 20, SpringLayout.WEST, mainPanel_);
 		layout.putConstraint(SpringLayout.NORTH, labelTimeInterval, 20, SpringLayout.SOUTH, labelTimepoints);
 
 		// Add time interval text box
 		tbTimeInterval_ = new JSpinner(new SpinnerNumberModel(10, 0, null, 1));
 		tbTimeInterval_.setEditor(new JSpinner.NumberEditor(tbTimeInterval_));
 		tbTimeInterval_.addChangeListener((ChangeEvent e) -> applySettingsFromUI());
-		contentPane.add(tbTimeInterval_);
+		mainPanel_.add(tbTimeInterval_);
 		layout.putConstraint(SpringLayout.WEST, tbTimeInterval_, 0, SpringLayout.WEST, tbLocation_);
 		layout.putConstraint(SpringLayout.EAST, tbTimeInterval_, 80, SpringLayout.WEST, tbTimeInterval_);
 		layout.putConstraint(SpringLayout.NORTH, tbTimeInterval_, -2, SpringLayout.NORTH, labelTimeInterval);
@@ -333,12 +339,12 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		layout.putConstraint(SpringLayout.WEST, cbTimeLapse_, 0, SpringLayout.WEST, cbDirectIo_);
 		layout.putConstraint(SpringLayout.EAST, cbTimeLapse_, 0, SpringLayout.EAST, cbDirectIo_);
 		layout.putConstraint(SpringLayout.NORTH, cbTimeLapse_, -3, SpringLayout.NORTH, labelTimeInterval);
-		contentPane.add(cbTimeLapse_);
+		mainPanel_.add(cbTimeLapse_);
 
 		// === CHANNELS SECTION ========================================
 		// Add channels configuration
 		final JLabel labelChannels = new JLabel("Channels");
-		contentPane.add(labelChannels);
+		mainPanel_.add(labelChannels);
 		layout.putConstraint(SpringLayout.WEST, labelChannels, 0, SpringLayout.WEST, labelTimeInterval);
 		layout.putConstraint(SpringLayout.NORTH, labelChannels, 20, SpringLayout.SOUTH, labelTimeInterval);
 
@@ -348,7 +354,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		listChannels_.getSelectionModel().addListSelectionListener((ListSelectionEvent e) -> updateChannelCommands());
 		JScrollPane listScroller = new JScrollPane(listChannels_);
 		listScroller.setPreferredSize(new Dimension(250, 150));
-		contentPane.add(listScroller);
+		mainPanel_.add(listScroller);
 		layout.putConstraint(SpringLayout.WEST, listScroller, 0, SpringLayout.WEST, tbTimePoints_);
 		layout.putConstraint(SpringLayout.NORTH, listScroller, -2, SpringLayout.NORTH, labelChannels);
 
@@ -358,7 +364,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		channelAddButton_.setMargin(new Insets(2, 5, 2, 5));
 		channelAddButton_.setPreferredSize(new Dimension(48, 24));
 		channelAddButton_.addActionListener((final ActionEvent e) -> addChannel());
-		contentPane.add(channelAddButton_);
+		mainPanel_.add(channelAddButton_);
 		layout.putConstraint(SpringLayout.WEST, channelAddButton_, 5, SpringLayout.EAST, listScroller);
 		layout.putConstraint(SpringLayout.NORTH, channelAddButton_, 0, SpringLayout.NORTH, listScroller);
 
@@ -368,7 +374,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		channelModifyButton_.setPreferredSize(new Dimension(48, 24));
 		channelModifyButton_.addActionListener((final ActionEvent e) -> modifyChannel());
 		channelModifyButton_.setEnabled(false);
-		contentPane.add(channelModifyButton_);
+		mainPanel_.add(channelModifyButton_);
 		layout.putConstraint(SpringLayout.WEST, channelModifyButton_, 0, SpringLayout.WEST, channelAddButton_);
 		layout.putConstraint(SpringLayout.NORTH, channelModifyButton_, 5, SpringLayout.SOUTH, channelAddButton_);
 
@@ -379,7 +385,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		channelRemoveButton_.setPreferredSize(new Dimension(48, 24));
 		channelRemoveButton_.addActionListener((final ActionEvent e) -> removeChannel());
 		channelRemoveButton_.setEnabled(false);
-		contentPane.add(channelRemoveButton_);
+		mainPanel_.add(channelRemoveButton_);
 		layout.putConstraint(SpringLayout.WEST, channelRemoveButton_, 0, SpringLayout.WEST, channelAddButton_);
 		layout.putConstraint(SpringLayout.NORTH, channelRemoveButton_, 5, SpringLayout.SOUTH, channelModifyButton_);
 
@@ -390,7 +396,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		channelUpButton_.setPreferredSize(new Dimension(48, 24));
 		channelUpButton_.addActionListener((final ActionEvent e) -> moveChannelUp());
 		channelUpButton_.setEnabled(false);
-		contentPane.add(channelUpButton_);
+		mainPanel_.add(channelUpButton_);
 		layout.putConstraint(SpringLayout.WEST, channelUpButton_, 0, SpringLayout.WEST, channelAddButton_);
 		layout.putConstraint(SpringLayout.NORTH, channelUpButton_, 5, SpringLayout.SOUTH, channelRemoveButton_);
 
@@ -401,44 +407,44 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		channelDownButton_.setPreferredSize(new Dimension(48, 24));
 		channelDownButton_.addActionListener((final ActionEvent e) -> moveChannelDown());
 		channelDownButton_.setEnabled(false);
-		contentPane.add(channelDownButton_);
+		mainPanel_.add(channelDownButton_);
 		layout.putConstraint(SpringLayout.WEST, channelDownButton_, 0, SpringLayout.WEST, channelAddButton_);
 		layout.putConstraint(SpringLayout.NORTH, channelDownButton_, 5, SpringLayout.SOUTH, channelUpButton_);
 
 		// === INFO SECTION ========================================
 		// Add info labels
 		labelDataSize_ = new JLabel("Dataset size: -");
-		contentPane.add(labelDataSize_);
+		mainPanel_.add(labelDataSize_);
 		layout.putConstraint(SpringLayout.WEST, labelDataSize_, 40, SpringLayout.EAST, channelAddButton_);
 		layout.putConstraint(SpringLayout.NORTH, labelDataSize_, 0, SpringLayout.NORTH, listScroller);
 
 		labelDuration_ = new JLabel("Dataset duration: -");
-		contentPane.add(labelDuration_);
+		mainPanel_.add(labelDuration_);
 		layout.putConstraint(SpringLayout.WEST, labelDuration_, 0, SpringLayout.WEST, labelDataSize_);
 		layout.putConstraint(SpringLayout.NORTH, labelDuration_, 10, SpringLayout.SOUTH, labelDataSize_);
 
 		labelExposure_ = new JLabel("Camera exposure: -");
-		contentPane.add(labelExposure_);
+		mainPanel_.add(labelExposure_);
 		layout.putConstraint(SpringLayout.WEST, labelExposure_, 0, SpringLayout.WEST, labelDataSize_);
 		layout.putConstraint(SpringLayout.NORTH, labelExposure_, 10, SpringLayout.SOUTH, labelDuration_);
 
 		labelFramerate_ = new JLabel("Frame rate: -");
-		contentPane.add(labelFramerate_);
+		mainPanel_.add(labelFramerate_);
 		layout.putConstraint(SpringLayout.WEST, labelFramerate_, 0, SpringLayout.WEST, labelDataSize_);
 		layout.putConstraint(SpringLayout.NORTH, labelFramerate_, 10, SpringLayout.SOUTH, labelExposure_);
 
 		labelImageSize_ = new JLabel("Image size: -");
-		contentPane.add(labelImageSize_);
+		mainPanel_.add(labelImageSize_);
 		layout.putConstraint(SpringLayout.WEST, labelImageSize_, 0, SpringLayout.WEST, labelDataSize_);
 		layout.putConstraint(SpringLayout.NORTH, labelImageSize_, 10, SpringLayout.SOUTH, labelFramerate_);
 
 		labelPixelDataSize_ = new JLabel("Bytes per pixel: -");
-		contentPane.add(labelPixelDataSize_);
+		mainPanel_.add(labelPixelDataSize_);
 		layout.putConstraint(SpringLayout.WEST, labelPixelDataSize_, 0, SpringLayout.WEST, labelDataSize_);
 		layout.putConstraint(SpringLayout.NORTH, labelPixelDataSize_, 10, SpringLayout.SOUTH, labelImageSize_);
 
 		labelPixelSize_ = new JLabel("Pixel size: -");
-		contentPane.add(labelPixelSize_);
+		mainPanel_.add(labelPixelSize_);
 		layout.putConstraint(SpringLayout.WEST, labelPixelSize_, 0, SpringLayout.WEST, labelPixelDataSize_);
 		layout.putConstraint(SpringLayout.NORTH, labelPixelSize_, 10, SpringLayout.SOUTH, labelPixelDataSize_);
 
@@ -447,19 +453,19 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		startAcqButton_.setToolTipText("Start Data Acquisition");
 		startAcqButton_.setMargin(new Insets(5, 15, 5, 15));
 		startAcqButton_.addActionListener((final ActionEvent e) -> startAcquisition());
-		contentPane.add(startAcqButton_);
-		layout.putConstraint(SpringLayout.WEST, startAcqButton_, 300, SpringLayout.WEST, contentPane);
-		layout.putConstraint(SpringLayout.EAST, startAcqButton_, -300, SpringLayout.EAST, contentPane);
-		layout.putConstraint(SpringLayout.SOUTH, startAcqButton_, -5, SpringLayout.NORTH, statusPanel);
+		mainPanel_.add(startAcqButton_);
+		layout.putConstraint(SpringLayout.WEST, startAcqButton_, 300, SpringLayout.WEST, mainPanel_);
+		layout.putConstraint(SpringLayout.EAST, startAcqButton_, -300, SpringLayout.EAST, mainPanel_);
+		layout.putConstraint(SpringLayout.SOUTH, startAcqButton_, -5, SpringLayout.SOUTH, mainPanel_);
 
 		// Add start scan button
 		startScanButton_ = new JButton("Scan");
 		startScanButton_.setToolTipText("Start Plate Scan");
 		startScanButton_.setMargin(new Insets(5, 15, 5, 15));
 		startScanButton_.addActionListener((final ActionEvent e) -> startScan());
-		contentPane.add(startScanButton_);
-		layout.putConstraint(SpringLayout.WEST, startScanButton_, 20, SpringLayout.WEST, contentPane);
-		layout.putConstraint(SpringLayout.SOUTH, startScanButton_, -135, SpringLayout.NORTH, statusPanel);
+		mainPanel_.add(startScanButton_);
+		layout.putConstraint(SpringLayout.WEST, startScanButton_, 20, SpringLayout.WEST, mainPanel_);
+		layout.putConstraint(SpringLayout.SOUTH, startScanButton_, -135, SpringLayout.SOUTH, mainPanel_);
 
 		// Add stop acquisition button
 		stopAcqButton_ = new JButton("Stop Acquisition");
@@ -468,9 +474,9 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		stopAcqButton_.addActionListener((final ActionEvent e) -> stopAcquisition());
 		stopAcqButton_.setPreferredSize(new Dimension(170, 35));
 		stopAcqButton_.setVisible(false);
-		contentPane.add(stopAcqButton_);
-		layout.putConstraint(SpringLayout.EAST, stopAcqButton_, -20, SpringLayout.EAST, contentPane);
-		layout.putConstraint(SpringLayout.SOUTH, stopAcqButton_, -5, SpringLayout.NORTH, statusPanel);
+		mainPanel_.add(stopAcqButton_);
+		layout.putConstraint(SpringLayout.EAST, stopAcqButton_, -20, SpringLayout.EAST, mainPanel_);
+		layout.putConstraint(SpringLayout.SOUTH, stopAcqButton_, -5, SpringLayout.SOUTH, mainPanel_);
 
 		// Add progress bar
 		progressBar_ = new JProgressBar();
@@ -479,15 +485,15 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		progressBar_.setStringPainted(true);
 		progressBar_.setString("0 / 0 (0%)");
 		progressBar_.setVisible(false);
-		contentPane.add(progressBar_);
-		layout.putConstraint(SpringLayout.WEST, progressBar_, 20, SpringLayout.WEST, contentPane);
+		mainPanel_.add(progressBar_);
+		layout.putConstraint(SpringLayout.WEST, progressBar_, 20, SpringLayout.WEST, mainPanel_);
 		layout.putConstraint(SpringLayout.EAST, progressBar_, -40, SpringLayout.WEST, stopAcqButton_);
-		layout.putConstraint(SpringLayout.SOUTH, progressBar_, -8, SpringLayout.NORTH, statusPanel);
+		layout.putConstraint(SpringLayout.SOUTH, progressBar_, -8, SpringLayout.SOUTH, mainPanel_);
 
 		// Add circular buffer status label
 		labelCbuffStatus_ = new JLabel("Sequence buffer usage:");
 		labelCbuffStatus_.setVisible(false);
-		contentPane.add(labelCbuffStatus_);
+		mainPanel_.add(labelCbuffStatus_);
 		layout.putConstraint(SpringLayout.WEST, labelCbuffStatus_, 0, SpringLayout.WEST, progressBar_);
 		layout.putConstraint(SpringLayout.SOUTH, labelCbuffStatus_, -10, SpringLayout.NORTH, progressBar_);
 
@@ -498,7 +504,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		cbuffCapacity_.setStringPainted(true);
 		cbuffCapacity_.setString("0 / 0 (0%)");
 		cbuffCapacity_.setVisible(false);
-		contentPane.add(cbuffCapacity_);
+		mainPanel_.add(cbuffCapacity_);
 		layout.putConstraint(SpringLayout.WEST, cbuffCapacity_, 10, SpringLayout.EAST, labelCbuffStatus_);
 		layout.putConstraint(SpringLayout.EAST, cbuffCapacity_, 200, SpringLayout.EAST, labelCbuffStatus_);
 		layout.putConstraint(SpringLayout.SOUTH, cbuffCapacity_, -8, SpringLayout.NORTH, progressBar_);
@@ -506,23 +512,37 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		// Add label for storage throughput frame-rate during acquisition
 		labelAcqStoreFps_ = new JLabel("Storage throughput: -");
 		labelAcqStoreFps_.setVisible(false);
-		contentPane.add(labelAcqStoreFps_);
+		mainPanel_.add(labelAcqStoreFps_);
 		layout.putConstraint(SpringLayout.WEST, labelAcqStoreFps_, 0, SpringLayout.WEST, labelCbuffStatus_);
 		layout.putConstraint(SpringLayout.SOUTH, labelAcqStoreFps_, -15, SpringLayout.NORTH, labelCbuffStatus_);
 
 		// Add label for storage write frame-rate during acquisition
 		labelAcqWriteFps_ = new JLabel("Write frame rate: -");
 		labelAcqWriteFps_.setVisible(false);
-		contentPane.add(labelAcqWriteFps_);
+		mainPanel_.add(labelAcqWriteFps_);
 		layout.putConstraint(SpringLayout.WEST, labelAcqWriteFps_, 0, SpringLayout.WEST, labelCbuffStatus_);
 		layout.putConstraint(SpringLayout.SOUTH, labelAcqWriteFps_, -35, SpringLayout.NORTH, labelCbuffStatus_);
 
 		// Add circular buffer memory footprint label
 		labelCbuffMemory_ = new JLabel("0 MB");
 		labelCbuffMemory_.setVisible(false);
-		contentPane.add(labelCbuffMemory_);
+		mainPanel_.add(labelCbuffMemory_);
 		layout.putConstraint(SpringLayout.WEST, labelCbuffMemory_, 10, SpringLayout.EAST, cbuffCapacity_);
 		layout.putConstraint(SpringLayout.NORTH, labelCbuffMemory_, 0, SpringLayout.NORTH, labelCbuffStatus_);
+
+		// Add status bar
+		SpringLayout statusbarlayout = new SpringLayout();
+		JPanel statusPanel = new JPanel();
+		statusPanel.setBorder(new BevelBorder(BevelBorder.LOWERED));
+		statusPanel.setPreferredSize(new Dimension(mainPanel_.getWidth(), 25));
+		statusPanel.setLayout(statusbarlayout);
+		getContentPane().add(statusPanel, BorderLayout.PAGE_END);
+
+		statusInfo_ = new JLabel("Ready");
+		statusInfo_.setHorizontalAlignment(SwingConstants.LEFT);
+		statusPanel.add(statusInfo_);
+		statusbarlayout.putConstraint(SpringLayout.WEST, statusInfo_, 10, SpringLayout.WEST, statusPanel);
+		statusbarlayout.putConstraint(SpringLayout.SOUTH, statusInfo_, -1, SpringLayout.SOUTH, statusPanel);
 
 		loadSettings();
 		updateAcqInfo();
@@ -569,6 +589,9 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		prefs.put(CFG_CHANNELS, jarr.toString());
 		prefs.putInt(CFG_WNDX, super.getBounds().x);
 		prefs.putInt(CFG_WNDY, super.getBounds().y);
+		prefs.putInt(CFG_WNDW, super.getBounds().width);
+		prefs.putInt(CFG_WNDH, super.getBounds().height);
+		prefs.putInt(CFG_LOGVIEWDIVIDER, logSplitPane_.getDividerLocation());
 	}
 
 	/**
@@ -591,6 +614,9 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		boolean fastexp = prefs.getBoolean(CFG_FASTEXP, false);
 		int wndx = prefs.getInt(CFG_WNDX, super.getBounds().x);
 		int wndy = prefs.getInt(CFG_WNDY, super.getBounds().y);
+		int wndw = prefs.getInt(CFG_WNDW, super.getBounds().width);
+		int wndh = prefs.getInt(CFG_WNDH, super.getBounds().height);
+		int logdiv = prefs.getInt(CFG_LOGVIEWDIVIDER, 0);
 
 		// Load channels configuration
 		String chlist = prefs.get(CFG_CHANNELS, "");
@@ -624,7 +650,9 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		cbFastExp_.setSelected(fastexp);
 		tbTimeInterval_.setValue(timeIntervalMs_);
 		tbTimeInterval_.setEnabled(tl);
-		super.setLocation(wndx, wndy);
+		if(logdiv > 0)
+			logSplitPane_.setDividerLocation(logdiv);
+		super.setBounds(wndx, wndy, wndw, wndh);
 	}
 
 	/**
@@ -1126,6 +1154,13 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	 */
 	public static void main(String[] args) {
 		// Parse program arguments
+		boolean wndonly = args.length > 0 && Objects.equals(args[0], "wndonly");
+		if(wndonly) {
+			TargaAcqWindow window = new TargaAcqWindow(null);
+			window.setVisible(true);
+			return;
+		}
+
 		String storageEngine = args.length > 0 ? args[0] : "bigtiff";
 		if(!storageEngine.equals("zarr") && !storageEngine.equals("bigtiff")) {
 			System.out.println("Invalid storage engine selected: " + storageEngine);

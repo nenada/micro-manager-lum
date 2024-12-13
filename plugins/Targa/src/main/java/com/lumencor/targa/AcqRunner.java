@@ -11,6 +11,10 @@ import java.util.Set;
 import java.util.Vector;
 import java.util.concurrent.CopyOnWriteArraySet;
 
+/**
+ * Acquisition background worker
+ * @author Milos Jovanovic <milos@tehnocad.rs>
+ */
 public class AcqRunner extends Thread {
 	// Readout configuration must match the configuration in Micro-manager
 	private static final String READOUT_CONFIG_GROUP = "Readout";
