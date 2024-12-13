@@ -33,5 +33,5 @@ package org.micromanager.internal;
  * generate (overwrite) MMVersion.java.
  */
 public class MMVersion {
-   public static final String VERSION_STRING = "2.0.6";
+   public static final String VERSION_STRING = "2.0.7";
 }

@@ -58,6 +58,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	private final JButton cancelLoadButton_;
 	private final JButton chooseLocationButton_;
 	private final JButton startAcqButton_;
+	private final JButton startScanButton_;
 	private final JButton stopAcqButton_;
 	private final JButton channelAddButton_;
 	private final JButton channelModifyButton_;
@@ -100,6 +101,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	private RewritableDatastore currentAcq_;
 	private Datastore loadedDatastore_;
 	private ChannelDataModel channelsDataModel_;
+	private ScanRunner scanWorker_;
 
 	/**
 	 * Class constructor
@@ -130,7 +132,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		super.setTitle("Targa Acquisition " + TargaPlugin.VERSION_INFO);
 		super.setIconImage(Toolkit.getDefaultToolkit().getImage(getClass().getResource("/org/micromanager/icons/microscope.gif")));
 		super.setResizable(false);
-		super.setPreferredSize(new Dimension(800, 620));
+		super.setPreferredSize(new Dimension(800, 750));
 		super.setBounds(400, 200, 800, 620);
 		super.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
 		super.pack();
@@ -450,6 +452,15 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		layout.putConstraint(SpringLayout.EAST, startAcqButton_, -300, SpringLayout.EAST, contentPane);
 		layout.putConstraint(SpringLayout.SOUTH, startAcqButton_, -5, SpringLayout.NORTH, statusPanel);
 
+		// Add start scan button
+		startScanButton_ = new JButton("Scan");
+		startScanButton_.setToolTipText("Start Plate Scan");
+		startScanButton_.setMargin(new Insets(5, 15, 5, 15));
+		startScanButton_.addActionListener((final ActionEvent e) -> startScan());
+		contentPane.add(startScanButton_);
+		layout.putConstraint(SpringLayout.WEST, startScanButton_, 20, SpringLayout.WEST, contentPane);
+		layout.putConstraint(SpringLayout.SOUTH, startScanButton_, -135, SpringLayout.NORTH, statusPanel);
+
 		// Add stop acquisition button
 		stopAcqButton_ = new JButton("Stop Acquisition");
 		stopAcqButton_.setToolTipText("Start Data Acquisition");
@@ -685,6 +696,19 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 			currentAcq_ = mmstudio_.getDataManager().createRewritableRAMDatastore();
 		if(mmstudio_.getDisplayManager().getActiveDataViewer() == null)
 			mmstudio_.getDisplayManager().createDisplay(currentAcq_);
+	}
+
+	private void startScan() {
+		runnerActive_ = true;
+		totalStoreTime_ = 0;
+		acqStartTime_ = 0;
+		acqFirstImage_ = 0;
+		scanWorker_ = new ScanRunner(mmstudio_, dataDir_, acqName_, channels_, chunkSize_, cbDirectIo_.isSelected(), flushCycle_);
+		scanWorker_.addListener(this);
+		scanWorker_.start();
+		statusInfo_.setText("Starting plate scan...");
+		updateFormState();
+		updateChannelCommands();
 	}
 
 	/**
