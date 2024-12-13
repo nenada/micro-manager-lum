@@ -744,14 +744,27 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	 */
 	protected void stopAcquisition() {
 		runnerActive_ = false;
-		acqWorker_.cancel();
-		try {
-			if(acqWorker_.isAlive())
-				acqWorker_.join();
-		} catch(InterruptedException e) {
-			mmstudio_.getLogManager().logError(e);
+		if (acqWorker_ != null) {
+			acqWorker_.cancel();
+			try {
+				if(acqWorker_.isAlive())
+					acqWorker_.join();
+			} catch(InterruptedException e) {
+				mmstudio_.getLogManager().logError(e);
+			}
+			acqWorker_ = null;
 		}
-		acqWorker_ = null;
+		if (scanWorker_ != null) {
+			scanWorker_.cancel();
+			try {
+				if(scanWorker_.isAlive())
+					scanWorker_.join();
+			} catch(InterruptedException e) {
+				mmstudio_.getLogManager().logError(e);
+			}
+			acqWorker_ = null;
+		}
+
 		statusInfo_.setText("Acquisition stopped by the user");
 		updateFormState();
 		updateChannelCommands();
@@ -1093,6 +1106,18 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		} catch(IOException e) {
 			mmstudio_.getLogManager().logError(e);
 		}
+	}
+
+	@Override
+	public void logMessage(String msg) {
+		mmstudio_.logs().logMessage(msg);
+		logView_.logMessage(msg, false);
+	}
+
+	@Override
+	public void logError(String msg) {
+		mmstudio_.logs().logError(msg);
+		logView_.logMessage(msg, true);
 	}
 
 	/**

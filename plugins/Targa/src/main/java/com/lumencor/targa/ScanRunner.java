@@ -61,23 +61,31 @@ public class ScanRunner extends Thread {
 	 */
 	@Override
 	public void run() {
-		active_ = true;
-		current_ = 0;
-        PositionList positions = studio_.positions().getPositionList();
-		total_ = channels_.size() * zStack_.length * positions.getNumberOfPositions();
-		if(total_ <= 0 || name_.isEmpty() || location_.isEmpty()) {
-			System.out.println("Acquisition cancelled. Invalid parameters");
+		String storageDriver = core_.getStorageDevice();
+		if (storageDriver.isEmpty()) {
+			notifyLogError("The configuration does not have any storage devices");
 			return;
 		}
 
-		String storageDriver = core_.getStorageDevice();
-		if (storageDriver.isEmpty()) {
-			notifyListenersFail("The configuration does not have any storage devices");
+        PositionList positions = studio_.positions().getPositionList();
+		if (positions.getNumberOfPositions() == 0) {
+			notifyLogError("No positions selected, aborting acquisition");
+			return;
+		}
+		if (location_.isEmpty() || name_.isEmpty()) {
+			notifyLogError("Output directory or dataset name not set, aborting acquisition");
+			return;
+		}
+		total_ = channels_.size() * zStack_.length * positions.getNumberOfPositions();
+		if(total_ <= 0) {
+			notifyLogError("Dataset length is zero, aborting acquisition");
 			return;
 		}
 
         String handle = "";
+		active_ = true;
         long startT = currentTimeMillis();
+		notifyLogMsg("Starting acquisition of " + positions.getNumberOfPositions() + " wells...");
 		try {
             // set camera configuration
             setSequenceMode(core_.getCameraDevice());
@@ -120,6 +128,12 @@ public class ScanRunner extends Thread {
             // iterate over the positions
 
             for (int p=0; p<positions.getNumberOfPositions(); p++) {
+				// Check cancellation token
+				synchronized(stateMutex_) {
+					if(!active_)
+						break;
+				}
+
                 MultiStagePosition pos = positions.getPosition(p);
                 core_.setXYPosition(pos.getX(), pos.getY());
                 for (int z=0; z<zStack_.length; z++) {
@@ -158,7 +172,8 @@ public class ScanRunner extends Thread {
 
 		} catch(Exception | Error e) {
 			notifyListenersFail(e.getMessage());
-            core_.logMessage("Error in ScanRunner: " + e.getMessage());
+            notifyLogError("Error in ScanRunner: " + e.getMessage());
+			active_ = false;
 		}
 
         // clean up
@@ -173,13 +188,21 @@ public class ScanRunner extends Thread {
 
         } catch (Exception e) {
             notifyListenersFail(e.getMessage());
-            core_.logMessage("Error in ScanRunner: " + e.getMessage());
+            notifyLogError("Error in ScanRunner: " + e.getMessage());
         }
-        notifyListenersComplete();
-        long totalTimeMs = currentTimeMillis() - startT;
-        core_.logMessage(String.format("Acquisition of %d wells, completed in %d ms", positions.getNumberOfPositions(),
+
+		long totalTimeMs = currentTimeMillis() - startT;
+
+		if (active_) {
+			notifyListenersComplete();
+			notifyLogMsg(String.format("Acquisition of %d wells, completed in %d ms", positions.getNumberOfPositions(),
                 totalTimeMs));
-        core_.logMessage(String.format("Time per well: %d ms", (int)((double)totalTimeMs/positions.getNumberOfPositions() + 0.5)));
+			notifyLogMsg(String.format("Time per well: %d ms", (int)((double)totalTimeMs/positions.getNumberOfPositions() + 0.5)));
+		} else {
+			String msg = String.format("Acquisition failed or cancelled by the user after %d ms ", totalTimeMs);
+			notifyLogError(msg);
+			notifyListenersFail(msg);
+		}
 
 		active_ = false;
 	}
@@ -224,6 +247,17 @@ public class ScanRunner extends Thread {
 			listener.notifyAcqFailed(msg);
 	}
 
+	private synchronized void notifyLogMsg(String msg) {
+		for(AcqRunnerListener listener : listeners_)
+			listener.logMessage(msg);
+	}
+
+	private synchronized void notifyLogError(String msg) {
+		for(AcqRunnerListener listener : listeners_)
+			listener.logError(msg);
+	}
+
+
 	/**
 	 * Notify event listeners of acquisition status update
 	 * @param img Acquired image
@@ -246,6 +280,17 @@ public class ScanRunner extends Thread {
 		core_.setProperty(driver, "ChunkSize", chunksz);
 		core_.setProperty(driver, "DirectIO", dirio);
 		core_.setProperty(driver, "FlushCycle", flushcyc);
+	}
+
+	/**
+	 * Cancel job
+	 */
+	public void cancel() {
+		synchronized(stateMutex_) {
+			if(!active_)
+				return;
+			active_ = false;
+		}
 	}
 
 
