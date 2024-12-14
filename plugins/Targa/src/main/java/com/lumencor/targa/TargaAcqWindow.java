@@ -469,7 +469,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 
 		// Add stop acquisition button
 		stopAcqButton_ = new JButton("Stop Acquisition");
-		stopAcqButton_.setToolTipText("Start Data Acquisition");
+		stopAcqButton_.setToolTipText("Stop Data Acquisition");
 		stopAcqButton_.setMargin(new Insets(5, 15, 5, 15));
 		stopAcqButton_.addActionListener((final ActionEvent e) -> stopAcquisition());
 		stopAcqButton_.setPreferredSize(new Dimension(170, 35));
@@ -634,7 +634,9 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 					channelsDataModel_.add(chobj.getString(CFG_CHNAME),
 							chobj.optDouble(CFG_CHEXP, defaultTTLexp),
 							chobj.optInt(CFG_CHINT, defaultTTLint));
-					channels_.add(new ChannelInfo(chobj.getString(CFG_CHNAME), defaultTTLexp, defaultTTLint));
+					channels_.add(new ChannelInfo(chobj.getString(CFG_CHNAME),
+							chobj.optDouble(CFG_CHEXP, defaultTTLexp),
+							chobj.optInt(CFG_CHINT, defaultTTLint)));
 				}
 			} catch(Exception e) {
 				mmstudio_.getLogManager().logError(e);
@@ -828,6 +830,8 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 			return;
 		}
 		channelsDataModel_.update(ind, chname, wnd.getExposure(), wnd.getIntensity());
+		channels_.get(ind).ttlExposureMs = exp;
+		channels_.get(ind).intensity = intensity;
 	}
 
 	/**

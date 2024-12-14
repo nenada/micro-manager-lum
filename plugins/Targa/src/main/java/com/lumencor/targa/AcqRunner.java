@@ -322,7 +322,7 @@ public class AcqRunner extends Thread {
 					if(!active_)
 						break;
 				}
-				while(core_.getRemainingImageCount() == 0) { }
+				while (core_.getRemainingImageCount() == 0) { }
 
 				// fetch the image
 				TaggedImage img = core_.popNextTaggedImage();

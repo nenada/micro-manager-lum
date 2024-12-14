@@ -7,6 +7,7 @@ import org.micromanager.MultiStagePosition;
 import org.micromanager.PositionList;
 import org.micromanager.Studio;
 import org.micromanager.data.Image;
+import org.scijava.log.LogMessage;
 
 import java.util.Set;
 import java.util.Vector;
@@ -35,7 +36,7 @@ public class ScanRunner extends Thread {
 	private int flushCycle_;
 	private int chunkSize_;
 	private boolean directIo_;
-    private double[] zStack_ = {0.0, -0.5, 0.5};
+    private double[] zStack_ = {0.0, 5.0, 10.0};
     private Studio studio_;
 
 
@@ -133,17 +134,17 @@ public class ScanRunner extends Thread {
 					if(!active_)
 						break;
 				}
-
                 MultiStagePosition pos = positions.getPosition(p);
-                core_.setXYPosition(pos.getX(), pos.getY());
+				long startPosTime = System.currentTimeMillis();
+				long totalSaveTime = 0;
+				long totalImageTime = 0;
+				core_.setXYPosition(pos.getX(), pos.getY());
                 for (int z=0; z<zStack_.length; z++) {
-                    if (z==0)
-                        core_.setPosition(zStage, pos.getZ());
-                    else
-                        core_.setPosition(zStage, pos.getZ() + zStack_[z]);
-
+					core_.setPosition(zStage, pos.getZ() + zStack_[z]);
                     core_.waitForDevice(zStage);
                     core_.waitForDevice(xyStage);
+
+					long startImageTime = System.currentTimeMillis();
                     core_.setProperty(TTL_SWITCH_DEV_NAME, TTL_SWITCH_PROP_RUN, "1"); // run images
 
                     // wait for images to arrive in the circular buffer
@@ -155,8 +156,10 @@ public class ScanRunner extends Thread {
                     }
                     if (retries >= maxRetries)
                         throw new Exception("Timeout waiting for images");
+					totalImageTime += (System.currentTimeMillis() - startImageTime);
 
                     // save the images
+					long startSaveTime = System.currentTimeMillis();
                     for (int c=0; c<channels_.size(); c++) {
                         // create coordinates for the image
                         LongVector coords = new LongVector();
@@ -167,8 +170,21 @@ public class ScanRunner extends Thread {
                         coords.add(0);
                         core_.saveNextImage(handle, coords, "");
                     } // end of channel loop
+					totalSaveTime += (System.currentTimeMillis() - startSaveTime);
                 } // end of z-stack loop
+				long wellTime = System.currentTimeMillis() - startPosTime;
+				long moveTime = wellTime - totalSaveTime - totalImageTime;
+				notifyLogMsg(String.format("%s processed in %d ms: image=%d, save=%d, move=%d.", pos.getLabel(),
+						wellTime,
+						totalImageTime,
+						totalSaveTime,
+						moveTime
+						));
             } // end of position loop
+			long totalTimeMs = currentTimeMillis() - startT;
+			notifyLogMsg(String.format("Acquisition of %d wells, completed in %.2f s", positions.getNumberOfPositions(),
+					totalTimeMs/1000.0));
+			notifyLogMsg(String.format("Time per well: %d ms", (int)((double)totalTimeMs/positions.getNumberOfPositions() + 0.5)));
 
 		} catch(Exception | Error e) {
 			notifyListenersFail(e.getMessage());
@@ -191,15 +207,10 @@ public class ScanRunner extends Thread {
             notifyLogError("Error in ScanRunner: " + e.getMessage());
         }
 
-		long totalTimeMs = currentTimeMillis() - startT;
-
 		if (active_) {
 			notifyListenersComplete();
-			notifyLogMsg(String.format("Acquisition of %d wells, completed in %d ms", positions.getNumberOfPositions(),
-                totalTimeMs));
-			notifyLogMsg(String.format("Time per well: %d ms", (int)((double)totalTimeMs/positions.getNumberOfPositions() + 0.5)));
 		} else {
-			String msg = String.format("Acquisition failed or cancelled by the user after %d ms ", totalTimeMs);
+			String msg = String.format("Acquisition failed or cancelled by the user");
 			notifyLogError(msg);
 			notifyListenersFail(msg);
 		}
@@ -290,6 +301,7 @@ public class ScanRunner extends Thread {
 			if(!active_)
 				return;
 			active_ = false;
+			notifyLogMsg("User requested to cancel.");
 		}
 	}
 
