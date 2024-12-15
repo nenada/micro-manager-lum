@@ -154,9 +154,11 @@ public class ScanRunner extends Thread {
 						if (autoFocus_) {
 							core_.waitForDevice(xyStage);
 							long startFocusT = System.currentTimeMillis();
+							setStandardMode(camera);
 							studio_.getAutofocusManager().getAutofocusMethod().fullFocus();
 							core_.waitForDevice(zStage);
 							focusZ = core_.getPosition(zStage);
+							setSequenceMode(camera);
 							long focusTime = System.currentTimeMillis() - startFocusT;
 							notifyLogMsg(String.format("Auto-focus at %s: %.2f um in %d ms", pos.getLabel(), focusZ, focusTime));
 							// add new position with modified focus
