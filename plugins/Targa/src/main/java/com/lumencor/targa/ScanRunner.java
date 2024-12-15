@@ -38,10 +38,11 @@ public class ScanRunner extends Thread {
 	private boolean directIo_;
     private double[] zStack_ = {0.0, 5.0, 10.0};
     private Studio studio_;
+	private final boolean autoFocus_;
 
 
     public ScanRunner(Studio std, String dataDir, String name, Vector<ChannelInfo> channels, int chunkSize,
-                      boolean directio, int flushCycle) {
+                      boolean directIO, int flushCycle, boolean autoFocus) {
         super();
 		active_ = false;
 		core_ = std.getCMMCore();
@@ -51,10 +52,11 @@ public class ScanRunner extends Thread {
 		buffTotal_ = 0;
 		channels_ = channels;
 		chunkSize_ = chunkSize;
-		directIo_ = directio;
+		directIo_ = directIO;
 		flushCycle_ = flushCycle;
 		stateMutex_ = new Object();
         studio_ = std;
+		autoFocus_ = autoFocus;
     }
 
     /**
@@ -86,6 +88,7 @@ public class ScanRunner extends Thread {
         String handle = "";
 		active_ = true;
         long startT = currentTimeMillis();
+		PositionList newPositionList = new PositionList(); // this is used only if autofocus is enabled
 		notifyLogMsg("Starting acquisition of " + positions.getNumberOfPositions() + " wells...");
 		try {
             // set camera configuration
@@ -126,8 +129,13 @@ public class ScanRunner extends Thread {
             core_.clearCircularBuffer();
             core_.startContinuousSequenceAcquisition(0);
 
-            // iterate over the positions
+			// position for the af
+			if (autoFocus_) {
+				core_.setPosition(zStage, positions.getPosition(0).getZ());
+				core_.waitForDevice(zStage);
+			}
 
+            // iterate over the positions
             for (int p=0; p<positions.getNumberOfPositions(); p++) {
 				// Check cancellation token
 				synchronized(stateMutex_) {
@@ -139,8 +147,27 @@ public class ScanRunner extends Thread {
 				long totalSaveTime = 0;
 				long totalImageTime = 0;
 				core_.setXYPosition(pos.getX(), pos.getY());
+				double focusZ = pos.getZ();
                 for (int z=0; z<zStack_.length; z++) {
-					core_.setPosition(zStage, pos.getZ() + zStack_[z]);
+					if (z == 0) {
+						// special processing for the first z-stack position
+						if (autoFocus_) {
+							core_.waitForDevice(xyStage);
+							long startFocusT = System.currentTimeMillis();
+							studio_.getAutofocusManager().getAutofocusMethod().fullFocus();
+							core_.waitForDevice(zStage);
+							focusZ = core_.getPosition(zStage);
+							long focusTime = System.currentTimeMillis() - startFocusT;
+							notifyLogMsg(String.format("Auto-focus at %s: %.2f um in %d ms", pos.getLabel(), focusZ, focusTime));
+							// add new position with modified focus
+							newPositionList.addPosition(new MultiStagePosition(xyStage, pos.getX(), pos.getY(), zStage, focusZ));
+						} else {
+							focusZ = pos.getZ();
+							core_.setPosition(zStage, focusZ);
+						}
+					} else
+						core_.setPosition(zStage, focusZ + zStack_[z]);
+
                     core_.waitForDevice(zStage);
                     core_.waitForDevice(xyStage);
 
@@ -210,9 +237,15 @@ public class ScanRunner extends Thread {
 		if (active_) {
 			notifyListenersComplete();
 		} else {
-			String msg = String.format("Acquisition failed or cancelled by the user");
+			String msg = "Acquisition failed or cancelled by the user";
 			notifyLogError(msg);
 			notifyListenersFail(msg);
+		}
+
+		if (autoFocus_) {
+			// update the position list
+			studio_.getPositionListManager().setPositionList(newPositionList);
+			notifyLogMsg(String.format("Position list updated with %d XYZ positions.", newPositionList.getNumberOfPositions()));
 		}
 
 		active_ = false;

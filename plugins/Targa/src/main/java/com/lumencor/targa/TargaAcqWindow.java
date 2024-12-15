@@ -46,6 +46,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	private final static String CFG_WNDW = "WndWidth";
 	private final static String CFG_WNDH = "WndHeight";
 	private final static String CFG_LOGVIEWDIVIDER = "LogDivider";
+	private static final String CFG_AUTOFOCUS = "AutoFocus";
 
 	private final JTextField tbLocation_;
 	private final JTextField tbName_;
@@ -89,6 +90,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	private final Studio mmstudio_;
 	private final CMMCore core_;
 	private final Vector<ChannelInfo> channels_;
+	private final JCheckBox cbAutoFocus_;
 	private String dataDir_;
 	private String acqName_;
 	private int timePoints_;
@@ -467,6 +469,13 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		layout.putConstraint(SpringLayout.WEST, startScanButton_, 20, SpringLayout.WEST, mainPanel_);
 		layout.putConstraint(SpringLayout.SOUTH, startScanButton_, -135, SpringLayout.SOUTH, mainPanel_);
 
+		// add AF checkbox
+		cbAutoFocus_ = new JCheckBox("Auto Focus");
+		cbAutoFocus_.setMargin(new Insets(5, 15, 5, 15));
+		mainPanel_.add(cbAutoFocus_);
+		layout.putConstraint(SpringLayout.WEST, cbAutoFocus_, 20, SpringLayout.WEST, mainPanel_);
+		layout.putConstraint(SpringLayout.SOUTH, cbAutoFocus_, -105, SpringLayout.SOUTH, mainPanel_);
+
 		// Add stop acquisition button
 		stopAcqButton_ = new JButton("Stop Acquisition");
 		stopAcqButton_.setToolTipText("Stop Data Acquisition");
@@ -592,6 +601,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		prefs.putInt(CFG_WNDW, super.getBounds().width);
 		prefs.putInt(CFG_WNDH, super.getBounds().height);
 		prefs.putInt(CFG_LOGVIEWDIVIDER, logSplitPane_.getDividerLocation());
+		prefs.putBoolean(CFG_AUTOFOCUS, cbAutoFocus_.isSelected());
 	}
 
 	/**
@@ -611,6 +621,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		flushCycle_ = prefs.getInt(CFG_FLUSHCYCLE, 0);
 		boolean tl = prefs.getBoolean(CFG_TIMELAPSE, false);
 		boolean dio = prefs.getBoolean(CFG_DIRECTIO, false);
+		cbAutoFocus_.setSelected(prefs.getBoolean(CFG_AUTOFOCUS, false));
 		boolean fastexp = prefs.getBoolean(CFG_FASTEXP, false);
 		int wndx = prefs.getInt(CFG_WNDX, super.getBounds().x);
 		int wndy = prefs.getInt(CFG_WNDY, super.getBounds().y);
@@ -733,7 +744,7 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		totalStoreTime_ = 0;
 		acqStartTime_ = 0;
 		acqFirstImage_ = 0;
-		scanWorker_ = new ScanRunner(mmstudio_, dataDir_, acqName_, channels_, chunkSize_, cbDirectIo_.isSelected(), flushCycle_);
+		scanWorker_ = new ScanRunner(mmstudio_, dataDir_, acqName_, channels_, chunkSize_, cbDirectIo_.isSelected(), flushCycle_, cbAutoFocus_.isSelected());
 		scanWorker_.addListener(this);
 		scanWorker_.start();
 		statusInfo_.setText("Starting plate scan...");
