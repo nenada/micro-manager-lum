@@ -91,48 +91,64 @@ public class ScanRunner extends Thread {
 		PositionList newPositionList = new PositionList(); // this is used only if autofocus is enabled
 		notifyLogMsg("Starting acquisition of " + positions.getNumberOfPositions() + " wells...");
 		try {
-            // set camera configuration
-            setSequenceMode(core_.getCameraDevice());
-
 			// Apply selected storage driver configuration
 			setStorageConfig(storageDriver, chunkSize_, directIo_, flushCycle_);
-
-			// Create the dataset
-			LongVector shape = new LongVector();
-			shape.add(positions.getNumberOfPositions());        // positions
-            shape.add(zStack_.length);      // z-stack
-			shape.add(channels_.size());    // channels
-			shape.add((int)core_.getImageWidth());
-			shape.add((int)core_.getImageHeight());
-			long bpp = core_.getBytesPerPixel();
-			StorageDataType pixType = bpp == 2 ? StorageDataType.StorageDataType_GRAY16 : (bpp == 1 ? StorageDataType.StorageDataType_GRAY8 : StorageDataType.StorageDataType_UNKNOWN);
-			if(pixType == StorageDataType.StorageDataType_UNKNOWN)
-				throw new Exception("Unsupported pixel depth of " + bpp + " bytes.");
-
-			handle = core_.createDataset(location_, name_, shape, pixType, "");
 
 			// Acquire images
             String xyStage = core_.getXYStageDevice();
             String zStage = core_.getFocusDevice();
             String camera = core_.getCameraDevice();
 
-            // program the TTL sequence
-            StringBuilder sequenceCmd = new StringBuilder();
-            for (ChannelInfo channelInfo : channels_) {
-                sequenceCmd.append(channelInfo.name).append(" ");
-                core_.setProperty(TTL_SWITCH_DEV_NAME, channelInfo.getIntensityProperty(), channelInfo.intensity);
-                core_.setProperty(TTL_SWITCH_DEV_NAME, channelInfo.getExposureProperty(), channelInfo.ttlExposureMs);
-            }
-            core_.setProperty(TTL_SWITCH_DEV_NAME, "ChannelSequence", sequenceCmd.toString());
-
             // start the camera
-            core_.clearCircularBuffer();
-            core_.startContinuousSequenceAcquisition(0);
+			// set camera configuration
+			if (!autoFocus_) {
+				// Normal acquisition
+				// -----------------
+				// Create the dataset
+				LongVector shape = new LongVector();
+				shape.add(positions.getNumberOfPositions());        // positions
+				shape.add(zStack_.length);      // z-stack
+				shape.add(channels_.size());    // channels
+				shape.add((int)core_.getImageWidth());
+				shape.add((int)core_.getImageHeight());
+				long bpp = core_.getBytesPerPixel();
+				StorageDataType pixType = bpp == 2 ? StorageDataType.StorageDataType_GRAY16 : (bpp == 1 ? StorageDataType.StorageDataType_GRAY8 : StorageDataType.StorageDataType_UNKNOWN);
+				if(pixType == StorageDataType.StorageDataType_UNKNOWN)
+					throw new Exception("Unsupported pixel depth of " + bpp + " bytes.");
 
-			// position for the af
-			if (autoFocus_) {
+				handle = core_.createDataset(location_, name_, shape, pixType, "");
+
+				// program the TTL sequence
+				StringBuilder sequenceCmd = new StringBuilder();
+				for (ChannelInfo channelInfo : channels_) {
+					sequenceCmd.append(channelInfo.name).append(" ");
+					core_.setProperty(TTL_SWITCH_DEV_NAME, channelInfo.getIntensityProperty(), channelInfo.intensity);
+					core_.setProperty(TTL_SWITCH_DEV_NAME, channelInfo.getExposureProperty(), channelInfo.ttlExposureMs);
+				}
+				core_.setProperty(TTL_SWITCH_DEV_NAME, "ChannelSequence", sequenceCmd.toString());
+
+				setSequenceMode(core_.getCameraDevice());
+				core_.clearCircularBuffer();
+				core_.startContinuousSequenceAcquisition(0);
+			} else {
+				// AF acquisition
+				// --------------
+				LongVector shape = new LongVector();
+				shape.add(positions.getNumberOfPositions());        // positions
+				shape.add((int)core_.getImageWidth());
+				shape.add((int)core_.getImageHeight());
+				long bpp = core_.getBytesPerPixel();
+				StorageDataType pixType = bpp == 2 ? StorageDataType.StorageDataType_GRAY16 : (bpp == 1 ? StorageDataType.StorageDataType_GRAY8 : StorageDataType.StorageDataType_UNKNOWN);
+				if(pixType == StorageDataType.StorageDataType_UNKNOWN)
+					throw new Exception("Unsupported pixel depth of " + bpp + " bytes.");
+
+				handle = core_.createDataset(location_, name_, shape, pixType, "");
+
 				core_.setPosition(zStage, positions.getPosition(0).getZ());
 				core_.waitForDevice(zStage);
+
+				core_.setConfig("CHANNEL", "CYAN");
+				core_.waitForConfig("CHANNEL", "CYAN");
 			}
 
             // iterate over the positions
@@ -154,15 +170,15 @@ public class ScanRunner extends Thread {
 						if (autoFocus_) {
 							core_.waitForDevice(xyStage);
 							long startFocusT = System.currentTimeMillis();
-							setStandardMode(camera);
 							studio_.getAutofocusManager().getAutofocusMethod().fullFocus();
 							core_.waitForDevice(zStage);
 							focusZ = core_.getPosition(zStage);
-							setSequenceMode(camera);
 							long focusTime = System.currentTimeMillis() - startFocusT;
 							notifyLogMsg(String.format("Auto-focus at %s: %.2f um in %d ms", pos.getLabel(), focusZ, focusTime));
 							// add new position with modified focus
-							newPositionList.addPosition(new MultiStagePosition(xyStage, pos.getX(), pos.getY(), zStage, focusZ));
+							MultiStagePosition newPos = new MultiStagePosition(xyStage, pos.getX(), pos.getY(), zStage, focusZ);
+							newPos.setLabel(pos.getLabel());
+							newPositionList.addPosition(newPos);
 						} else {
 							focusZ = pos.getZ();
 							core_.setPosition(zStage, focusZ);
@@ -173,33 +189,45 @@ public class ScanRunner extends Thread {
                     core_.waitForDevice(zStage);
                     core_.waitForDevice(xyStage);
 
-					long startImageTime = System.currentTimeMillis();
-                    core_.setProperty(TTL_SWITCH_DEV_NAME, TTL_SWITCH_PROP_RUN, "1"); // run images
 
-                    // wait for images to arrive in the circular buffer
-                    int retries = 0;
-                    int maxRetries = 300;
-                    while ((core_.getRemainingImageCount() < channels_.size()) && (retries < maxRetries)) {
-                        core_.sleep(1);
-                        retries++;
-                    }
-                    if (retries >= maxRetries)
-                        throw new Exception("Timeout waiting for images");
-					totalImageTime += (System.currentTimeMillis() - startImageTime);
+					if (!autoFocus_) {
+						long startImageTime = System.currentTimeMillis();
+						core_.setProperty(TTL_SWITCH_DEV_NAME, TTL_SWITCH_PROP_RUN, "1"); // run images
 
-                    // save the images
-					long startSaveTime = System.currentTimeMillis();
-                    for (int c=0; c<channels_.size(); c++) {
-                        // create coordinates for the image
-                        LongVector coords = new LongVector();
-                        coords.add(p);
-                        coords.add(z);
-                        coords.add(c);
-                        coords.add(0);
-                        coords.add(0);
-                        core_.saveNextImage(handle, coords, "");
-                    } // end of channel loop
-					totalSaveTime += (System.currentTimeMillis() - startSaveTime);
+						// wait for images to arrive in the circular buffer
+						int retries = 0;
+						int maxRetries = 300;
+						while ((core_.getRemainingImageCount() < channels_.size()) && (retries < maxRetries)) {
+							core_.sleep(1);
+							retries++;
+						}
+						if (retries >= maxRetries)
+							throw new Exception("Timeout waiting for images");
+						totalImageTime += (System.currentTimeMillis() - startImageTime);
+
+						// save the images
+						long startSaveTime = System.currentTimeMillis();
+						for (int c = 0; c < channels_.size(); c++) {
+							// create coordinates for the image
+							LongVector coords = new LongVector();
+							coords.add(p);
+							coords.add(z);
+							coords.add(c);
+							coords.add(0);
+							coords.add(0);
+							core_.saveNextImage(handle, coords, "");
+						} // end of channel loop
+						totalSaveTime += (System.currentTimeMillis() - startSaveTime);
+					} else {
+						// AF
+						long startSaveTime = System.currentTimeMillis();
+						LongVector coords = new LongVector();
+						coords.add(p);
+						coords.add(0);
+						coords.add(0);
+						core_.snapAndSave(handle, coords, "");
+						totalSaveTime += (System.currentTimeMillis() - startSaveTime);
+					}
                 } // end of z-stack loop
 				long wellTime = System.currentTimeMillis() - startPosTime;
 				long moveTime = wellTime - totalSaveTime - totalImageTime;
