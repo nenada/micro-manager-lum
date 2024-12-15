@@ -473,8 +473,8 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		cbAutoFocus_ = new JCheckBox("Auto Focus");
 		cbAutoFocus_.setMargin(new Insets(5, 15, 5, 15));
 		mainPanel_.add(cbAutoFocus_);
-		layout.putConstraint(SpringLayout.WEST, cbAutoFocus_, 20, SpringLayout.WEST, mainPanel_);
-		layout.putConstraint(SpringLayout.SOUTH, cbAutoFocus_, -105, SpringLayout.SOUTH, mainPanel_);
+		layout.putConstraint(SpringLayout.WEST, cbAutoFocus_, 20, SpringLayout.EAST, startScanButton_);
+		layout.putConstraint(SpringLayout.SOUTH, cbAutoFocus_, -135, SpringLayout.SOUTH, mainPanel_);
 
 		// Add stop acquisition button
 		stopAcqButton_ = new JButton("Stop Acquisition");
