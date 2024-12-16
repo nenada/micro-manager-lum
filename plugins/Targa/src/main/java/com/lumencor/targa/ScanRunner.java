@@ -16,7 +16,7 @@ import java.util.concurrent.CopyOnWriteArraySet;
 import static java.lang.System.currentTimeMillis;
 
 /**
- *
+ * Recursion type plate scan assay
  */
 public class ScanRunner extends Thread {
 	private static final String TTL_SWITCH_DEV_NAME = "TTLSwitch";
@@ -171,7 +171,7 @@ public class ScanRunner extends Thread {
 							core_.waitForDevice(zStage);
 							focusZ = core_.getPosition(zStage);
 							long focusTime = System.currentTimeMillis() - startFocusT;
-							notifyLogMsg(String.format("AF score %.3f at %s: %.2f um in %d ms",
+							notifyLogMsg(String.format("AF score %.3e at %s: %.2f um in %d ms",
 									studio_.getAutofocusManager().getAutofocusMethod().getCurrentFocusScore(),
 									pos.getLabel(), focusZ, focusTime));
 							// add new position with modified focus
