@@ -144,9 +144,6 @@ public class ScanRunner extends Thread {
 
 				handle = core_.createDataset(location_, name_, shape, pixType, "");
 
-				core_.setPosition(zStage, positions.getPosition(0).getZ());
-				core_.waitForDevice(zStage);
-
 				core_.setConfig("CHANNEL", "CYAN");
 				core_.waitForConfig("CHANNEL", "CYAN");
 			}
@@ -174,7 +171,9 @@ public class ScanRunner extends Thread {
 							core_.waitForDevice(zStage);
 							focusZ = core_.getPosition(zStage);
 							long focusTime = System.currentTimeMillis() - startFocusT;
-							notifyLogMsg(String.format("Auto-focus at %s: %.2f um in %d ms", pos.getLabel(), focusZ, focusTime));
+							notifyLogMsg(String.format("AF score %.3f at %s: %.2f um in %d ms",
+									studio_.getAutofocusManager().getAutofocusMethod().getCurrentFocusScore(),
+									pos.getLabel(), focusZ, focusTime));
 							// add new position with modified focus
 							MultiStagePosition newPos = new MultiStagePosition(xyStage, pos.getX(), pos.getY(), zStage, focusZ);
 							newPos.setLabel(pos.getLabel());
@@ -188,7 +187,6 @@ public class ScanRunner extends Thread {
 
                     core_.waitForDevice(zStage);
                     core_.waitForDevice(xyStage);
-
 
 					if (!autoFocus_) {
 						long startImageTime = System.currentTimeMillis();
