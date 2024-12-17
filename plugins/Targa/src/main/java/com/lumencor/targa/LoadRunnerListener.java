@@ -8,4 +8,6 @@ public interface LoadRunnerListener {
 	void notifyLoadFailed(String msg);
 	void notifyLoadImage(Image img);
 	void notifyLoadSummaryMetadata(SummaryMetadata meta);
+	void logMessage(String msg);
+	void logError(String msg);
 }

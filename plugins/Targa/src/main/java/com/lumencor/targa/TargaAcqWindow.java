@@ -10,6 +10,7 @@ import java.awt.*;
 import java.awt.event.*;
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 import java.util.Objects;
 import java.util.Vector;
 import java.util.prefs.Preferences;
@@ -1161,6 +1162,8 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 	public void notifyLoadFailed(String msg) {
 		loadActive_ = false;
 		statusInfo_.setText("Dataset load failed. " + msg);
+		logView_.logMessage(msg, true);
+
 		updateFormState();
 		updateChannelCommands();
 	}

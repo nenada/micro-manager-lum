@@ -3,6 +3,9 @@ package org.lumencor.targa;
 import mmcorej.CMMCore;
 import mmcorej.LongVector;
 import mmcorej.StorageDataType;
+import mmcorej.org.json.JSONArray;
+import mmcorej.org.json.JSONObject;
+import org.micromanager.AutofocusPlugin;
 import org.micromanager.MultiStagePosition;
 import org.micromanager.PositionList;
 import org.micromanager.Studio;
@@ -39,6 +42,7 @@ public class ScanRunner extends Thread {
     private double[] zStack_ = {0.0, 5.0, 10.0};
     private Studio studio_;
 	private final boolean autoFocus_;
+	private boolean demoMode_;
 
 
     public ScanRunner(Studio std, String dataDir, String name, Vector<ChannelInfo> channels, int chunkSize,
@@ -57,6 +61,7 @@ public class ScanRunner extends Thread {
 		stateMutex_ = new Object();
         studio_ = std;
 		autoFocus_ = autoFocus;
+		demoMode_ = false;
     }
 
     /**
@@ -98,6 +103,10 @@ public class ScanRunner extends Thread {
             String xyStage = core_.getXYStageDevice();
             String zStage = core_.getFocusDevice();
             String camera = core_.getCameraDevice();
+			demoMode_ = isDemo(camera);
+			if (demoMode_)
+				notifyLogMsg("System is in demo mode.");
+
 
             // start the camera
 			// set camera configuration
@@ -116,7 +125,16 @@ public class ScanRunner extends Thread {
 				if(pixType == StorageDataType.StorageDataType_UNKNOWN)
 					throw new Exception("Unsupported pixel depth of " + bpp + " bytes.");
 
-				handle = core_.createDataset(location_, name_, shape, pixType, "");
+				// Create summary metadata
+				JSONObject summaryMeta = new JSONObject();
+				JSONObject summaryObj = new JSONObject();
+				JSONArray chNames = new JSONArray();
+				for (ChannelInfo c : channels_)
+					chNames.put(c.name);
+				summaryObj.put("ChNames", chNames);
+				summaryMeta.put("Summary", summaryMeta);
+
+				handle = core_.createDataset(location_, name_, shape, pixType, summaryMeta.toString(3));
 
 				// program the TTL sequence
 				StringBuilder sequenceCmd = new StringBuilder();
@@ -126,10 +144,11 @@ public class ScanRunner extends Thread {
 					core_.setProperty(TTL_SWITCH_DEV_NAME, channelInfo.getExposureProperty(), channelInfo.ttlExposureMs);
 				}
 				core_.setProperty(TTL_SWITCH_DEV_NAME, "ChannelSequence", sequenceCmd.toString());
-
 				setSequenceMode(core_.getCameraDevice());
+
 				core_.clearCircularBuffer();
-				core_.startContinuousSequenceAcquisition(0);
+				if (!demoMode_)
+					core_.startContinuousSequenceAcquisition(0);
 			} else {
 				// AF acquisition
 				// --------------
@@ -170,16 +189,23 @@ public class ScanRunner extends Thread {
 						if (autoFocus_) {
 							core_.waitForDevice(xyStage);
 							long startFocusT = System.currentTimeMillis();
-							studio_.getAutofocusManager().getAutofocusMethod().fullFocus();
-							core_.waitForDevice(zStage);
-							focusZ = core_.getPosition(zStage);
-							long focusTime = System.currentTimeMillis() - startFocusT;
-							notifyLogMsg(String.format("AF at %s: %.2f um in %d ms",
-									pos.getLabel(), focusZ, focusTime));
-							// add new position with modified focus
-							MultiStagePosition newPos = new MultiStagePosition(xyStage, pos.getX(), pos.getY(), zStage, focusZ);
-							newPos.setLabel(pos.getLabel());
-							newPositionList.addPosition(newPos);
+							AutofocusPlugin afPlugin = studio_.getAutofocusManager().getAutofocusMethod();
+							if (afPlugin != null) {
+								afPlugin.fullFocus();
+								core_.waitForDevice(zStage);
+								focusZ = core_.getPosition(zStage);
+								long focusTime = System.currentTimeMillis() - startFocusT;
+								notifyLogMsg(String.format("AF at %s: %.2f um in %d ms",
+										pos.getLabel(), focusZ, focusTime));
+								// add new position with modified focus
+								MultiStagePosition newPos = new MultiStagePosition(xyStage, pos.getX(), pos.getY(), zStage, focusZ);
+								newPos.setLabel(pos.getLabel());
+								newPositionList.addPosition(newPos);
+							} else {
+								notifyLogMsg(String.format("%s: No AF device",
+										pos.getLabel()));
+								newPositionList.addPosition(pos);
+							}
 						} else {
 							focusZ = pos.getZ();
 							core_.setPosition(zStage, focusZ);
@@ -192,7 +218,8 @@ public class ScanRunner extends Thread {
 
 					if (!autoFocus_) {
 						long startImageTime = System.currentTimeMillis();
-						core_.setProperty(TTL_SWITCH_DEV_NAME, TTL_SWITCH_PROP_RUN, "1"); // run images
+
+						triggerAcquisition(); // run images
 
 						// wait for images to arrive in the circular buffer
 						int retries = 0;
@@ -371,19 +398,56 @@ public class ScanRunner extends Thread {
 		}
 	}
 
-
+	/**
+	 * Sets camera into sequence acquisition mode driven by the external TTL switch
+	 * @param cam
+	 * @throws Exception
+	 */
     private void setSequenceMode(String cam) throws Exception {
-	    core_.setProperty(cam, "TRIGGER SOURCE", "EXTERNAL");
-	    core_.setProperty(cam, "TRIGGER ACTIVE", "LEVEL");
-	    core_.setProperty(cam, "TriggerPolarity", "POSITIVE");
+		if (!demoMode_) {
+			core_.setProperty(cam, "TRIGGER SOURCE", "EXTERNAL");
+			core_.setProperty(cam, "TRIGGER ACTIVE", "LEVEL");
+			core_.setProperty(cam, "TriggerPolarity", "POSITIVE");
+		}
     }
 
+	/**
+	 * Sets the camera into standard software trigger mode
+	 * @param cam
+	 * @throws Exception
+	 */
     void setStandardMode(String cam) throws Exception {
-	    core_.setProperty(cam, "TRIGGER SOURCE", "SOFTWARE");
-	    core_.setProperty(cam, "TRIGGER ACTIVE", "EDGE");
-	    core_.setProperty(cam, "TriggerPolarity", "NEGATIVE");
+		if (!demoMode_) {
+			core_.setProperty(cam, "TRIGGER SOURCE", "SOFTWARE");
+			core_.setProperty(cam, "TRIGGER ACTIVE", "EDGE");
+			core_.setProperty(cam, "TriggerPolarity", "NEGATIVE");
+		}
     }
 
+	/**
+	 * Detects if we are using demo configuration
+	 * @param cam - camera name
+	 * @return - true if demo
+	 */
+	boolean isDemo(String cam) {
+        try {
+            String descr = core_.getProperty(cam, "Description");
+			return descr.contains("Demo Camera");
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+	/**
+	 * Starts acquisition
+	 * @throws Exception
+	 */
+	void triggerAcquisition() throws Exception {
+		if (demoMode_)
+			core_.startSequenceAcquisition(channels_.size(), 10.0, true);
+		else
+			core_.setProperty(TTL_SWITCH_DEV_NAME, TTL_SWITCH_PROP_RUN, "1"); // run images
+	}
 
 
 }

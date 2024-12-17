@@ -11,6 +11,7 @@ import org.micromanager.data.internal.DefaultMetadata;
 import org.micromanager.data.internal.DefaultSummaryMetadata;
 import org.micromanager.internal.propertymap.NonPropertyMapJSONFormats;
 
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 
@@ -78,16 +79,20 @@ public class LoadRunner extends Thread {
 				numImages *= shape.get(i);
 
 			// Obtain summary metadata
-			String dsmeta = core_.getSummaryMeta(handle);
-			if(dsmeta != null && !dsmeta.isEmpty()) {
+			String summaryMetaStr = core_.getSummaryMeta(handle);
+			if(summaryMetaStr != null && !summaryMetaStr.isEmpty()) {
 				try {
-					JsonElement je = new JsonParser().parse(dsmeta);
-					SummaryMetadata smeta = DefaultSummaryMetadata.fromPropertyMap(NonPropertyMapJSONFormats.metadata().fromGson(je));
-					notifyListenersMetadata(smeta);
+					JsonElement je = new JsonParser().parse(summaryMetaStr);
+					SummaryMetadata summaryMetadata = DefaultSummaryMetadata.fromPropertyMap(NonPropertyMapJSONFormats.metadata().fromGson(je));
+					notifyListenersMetadata(summaryMetadata);
 				} catch(Exception e) {
 					mmstudio_.getLogManager().logError(e);
 				}
 			}
+
+			// print info
+			notifyLogMsg("Loaded: " + dataPath_);
+
 
 			// Check cancellation token
 			synchronized(stateMutex_) {
@@ -112,14 +117,21 @@ public class LoadRunner extends Thread {
 						coords.add(i);
 						coords.add(j);
 						coords.add(k);
+
+						String tMsg = String.format("Loading image from coordinates: P=%d, Z/T=%d, C=%d...", i, j, k);
+						notifyLogMsg(tMsg);
 						Object pixdata = core_.getImage(handle, coords);
-						if(pixdata == null)
+						if(pixdata == null) {
+							notifyLogMsg("Image does not exist.");
 							continue;
+						}
+						notifyLogMsg("Image Loaded.");
 						Metadata meta = null;
-						String metastr = core_.getImageMeta(handle, coords);
-						if(metastr != null && !metastr.isEmpty()) {
+						String metaStr = core_.getImageMeta(handle, coords);
+						if(metaStr != null && !metaStr.isEmpty()) {
 							try {
-								JsonElement je = new JsonParser().parse(metastr);
+								notifyLogMsg("Image meta: " + metaStr);
+								JsonElement je = new JsonParser().parse(metaStr);
 								meta = DefaultMetadata.fromPropertyMap(NonPropertyMapJSONFormats.metadata().fromGson(je));
 							} catch(Exception e) {
 								mmstudio_.getLogManager().logError(e);
@@ -127,7 +139,16 @@ public class LoadRunner extends Thread {
 						}
 						Coords.CoordsBuilder builder = mmstudio_.data().coordsBuilder();
 						builder.stagePosition(i).z(j).channel(k);
-						Image img = new DefaultImage(pixdata, w, h, bpp, 1, builder.build(), meta);
+						Coords mmCoords = builder.build();
+						Image img = new DefaultImage(pixdata, w, h, bpp, 1, mmCoords, meta);
+
+						List<String> axes = mmCoords.getAxes();
+						StringBuilder mmMsg = new StringBuilder();
+						mmMsg.append("Creating image at MM coords: ");
+						for (String a : axes) {
+							mmMsg.append(a).append("-").append(mmCoords.getIndex(a)).append(" ");
+						}
+						notifyLogMsg(mmMsg.toString());
 						notifyListenersImage(img);
 					}
 				}
@@ -223,4 +244,15 @@ public class LoadRunner extends Thread {
 		for(LoadRunnerListener listener : listeners_)
 			listener.notifyLoadSummaryMetadata(meta);
 	}
+
+	private synchronized void notifyLogMsg(String msg) {
+		for(LoadRunnerListener listener : listeners_)
+			listener.logMessage(msg);
+	}
+
+	private synchronized void notifyLogError(String msg) {
+		for(LoadRunnerListener listener : listeners_)
+			listener.logError(msg);
+	}
+
 }
