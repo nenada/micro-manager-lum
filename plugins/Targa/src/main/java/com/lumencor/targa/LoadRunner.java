@@ -126,7 +126,7 @@ public class LoadRunner extends Thread {
 							}
 						}
 						Coords.CoordsBuilder builder = mmstudio_.data().coordsBuilder();
-						builder.time(j).channel(k);
+						builder.stagePosition(i).z(j).channel(k);
 						Image img = new DefaultImage(pixdata, w, h, bpp, 1, builder.build(), meta);
 						notifyListenersImage(img);
 					}

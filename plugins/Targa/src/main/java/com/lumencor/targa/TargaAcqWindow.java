@@ -681,7 +681,10 @@ public class TargaAcqWindow extends JFrame implements AcqRunnerListener, LoadRun
 		loadWorker_.addListener(this);
 		loadWorker_.start();
 
-		statusInfo_.setText(String.format("Loading file: %s...", result.getAbsolutePath()));
+		if (result.isDirectory())
+			statusInfo_.setText(String.format("Loading: %s...", result.getAbsolutePath()));
+		else
+			statusInfo_.setText(String.format("Loading: %s...", result.getParent()));
 		loadedDatastore_ = mmstudio_.data().createRAMDatastore();
 		DisplayWindow display = mmstudio_.displays().createDisplay(loadedDatastore_);
 		display.setCustomTitle(result.getAbsolutePath());

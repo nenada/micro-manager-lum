@@ -151,6 +151,7 @@ public class ScanRunner extends Thread {
 			}
 
             // iterate over the positions
+			int siteCounter = 0;
             for (int p=0; p<positions.getNumberOfPositions(); p++) {
 				// Check cancellation token
 				synchronized(stateMutex_) {
@@ -173,8 +174,7 @@ public class ScanRunner extends Thread {
 							core_.waitForDevice(zStage);
 							focusZ = core_.getPosition(zStage);
 							long focusTime = System.currentTimeMillis() - startFocusT;
-							notifyLogMsg(String.format("AF score %.3e at %s: %.2f um in %d ms",
-									studio_.getAutofocusManager().getAutofocusMethod().getCurrentFocusScore(),
+							notifyLogMsg(String.format("AF at %s: %.2f um in %d ms",
 									pos.getLabel(), focusZ, focusTime));
 							// add new position with modified focus
 							MultiStagePosition newPos = new MultiStagePosition(xyStage, pos.getX(), pos.getY(), zStage, focusZ);
@@ -239,11 +239,12 @@ public class ScanRunner extends Thread {
 						totalSaveTime,
 						moveTime
 						));
+				siteCounter++;
             } // end of position loop
 			long totalTimeMs = currentTimeMillis() - startT;
-			notifyLogMsg(String.format("Acquisition of %d wells, completed in %.2f s", positions.getNumberOfPositions(),
+			notifyLogMsg(String.format("Acquisition of %d wells, completed in %.2f s", siteCounter,
 					totalTimeMs/1000.0));
-			notifyLogMsg(String.format("Time per well: %d ms", (int)((double)totalTimeMs/positions.getNumberOfPositions() + 0.5)));
+			notifyLogMsg(String.format("Time per well: %d ms", (int)((double)totalTimeMs/siteCounter + 0.5)));
 
 		} catch(Exception | Error e) {
 			notifyListenersFail(e.getMessage());
