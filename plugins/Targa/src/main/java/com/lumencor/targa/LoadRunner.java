@@ -52,6 +52,10 @@ public class LoadRunner extends Thread {
 			handle = core_.loadDataset(dataPath_);
 			mmcorej.LongVector shape = core_.getDatasetShape(handle);
 			mmcorej.StorageDataType type = core_.getDatasetPixelType(handle);
+			// we are assuming the following dimensions
+			// P, T, C, X, Y for Columbia
+			// P, Z, C, X, Y for Recursion
+
 			if(shape == null || type == null || shape.size() != 5) {
 				core_.closeDataset(handle);
 				notifyListenersFail("Selected file is not a valid dataset");
@@ -94,9 +98,9 @@ public class LoadRunner extends Thread {
 			}
 
 			// Load images
-			for(int i = 0; i < shape.get(0); i++) {
-				for(int j = 0; j < shape.get(1); j++) {
-					for(int k = 0; k < shape.get(2); k++) {
+			for(int i = 0; i < shape.get(0); i++) { 			// positions
+				for(int j = 0; j < shape.get(1); j++) {			// timepoints, or z positions
+					for(int k = 0; k < shape.get(2); k++) {		// channels
 						// Check cancellation token
 						synchronized(stateMutex_) {
 							if(!active_) {

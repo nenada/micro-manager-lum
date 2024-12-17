@@ -135,6 +135,8 @@ public class ScanRunner extends Thread {
 				// --------------
 				LongVector shape = new LongVector();
 				shape.add(positions.getNumberOfPositions());        // positions
+				shape.add(1);										// single z
+				shape.add(1);										// single channel
 				shape.add((int)core_.getImageWidth());
 				shape.add((int)core_.getImageHeight());
 				long bpp = core_.getBytesPerPixel();
@@ -161,7 +163,7 @@ public class ScanRunner extends Thread {
 				long totalImageTime = 0;
 				core_.setXYPosition(pos.getX(), pos.getY());
 				double focusZ = pos.getZ();
-                for (int z=0; z<zStack_.length; z++) {
+                for (int z=0; z<(autoFocus_ ? 1 : zStack_.length); z++) {
 					if (z == 0) {
 						// special processing for the first z-stack position
 						if (autoFocus_) {
@@ -208,9 +210,9 @@ public class ScanRunner extends Thread {
 						for (int c = 0; c < channels_.size(); c++) {
 							// create coordinates for the image
 							LongVector coords = new LongVector();
-							coords.add(p);
-							coords.add(z);
-							coords.add(c);
+							coords.add(p); // position
+							coords.add(z); // z
+							coords.add(c); // channel
 							coords.add(0);
 							coords.add(0);
 							core_.saveNextImage(handle, coords, "");
@@ -220,7 +222,9 @@ public class ScanRunner extends Thread {
 						// AF
 						long startSaveTime = System.currentTimeMillis();
 						LongVector coords = new LongVector();
-						coords.add(p);
+						coords.add(p);  // position
+						coords.add(0);  // z position
+						coords.add(0);  // channel
 						coords.add(0);
 						coords.add(0);
 						core_.snapAndSave(handle, coords, "");
